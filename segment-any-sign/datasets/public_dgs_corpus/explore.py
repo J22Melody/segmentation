@@ -31,8 +31,19 @@ from pathlib import Path
 # eaf/cmdi backup — the files the TFDS records reference
 DOWNLOADS = Path("/home/zifjia/sp2/zifjia/backups/tensorflow_datasets_2/downloads")
 
-# repo root: .../segmentation
-REPO_ROOT = Path.cwd().parents[2] if Path.cwd().name == "public_dgs_corpus" else Path(__file__).resolve().parents[3]
+
+def find_repo_root():
+    """Walk up from the working directory until the package folder appears.
+
+    Works from any cwd, and in the Interactive Window where __file__ is undefined.
+    """
+    for base in [Path.cwd(), *Path.cwd().parents]:
+        if (base / "sign_language_segmentation").is_dir():
+            return base
+    raise RuntimeError(f"cannot locate the segmentation repo root from {Path.cwd()}")
+
+
+REPO_ROOT = find_repo_root()
 SPLITS_PATH = REPO_ROOT / "sign_language_segmentation" / "datasets" / "dgs" / "splits.json"
 ELAN_UTILS_PATH = REPO_ROOT / "sign_language_segmentation" / "datasets" / "dgs" / "utils.py"
 
@@ -285,6 +296,66 @@ by_split["glosses/sentence"] = (by_split["glosses"] / by_split["sentences"]).rou
 by_split
 
 # %% [markdown]
+# ## Cross-check against the 2023 paper
+#
+# [Moryossef & Jiang (2023)](https://arxiv.org/abs/2310.13960), §4.1, reports the
+# corpus after exactly the filtering we replicate here — the "Joke" category
+# (unannotated) plus five documents with missing annotations:
+#
+# > The corpus comprises 404 documents / 714 videos with an average duration of
+# > 7.55 minutes […] After filtering the unannotated data, we are left with 296
+# > documents / 583 videos for training, 6 / 12 for validation, and 9 / 17 for
+# > testing. The mean number of signs and phrases in a video from the training set
+# > is 613 and 111, respectively.
+#
+# A *video* is one signer within one document, which is why the video count is
+# close to twice the document count.
+
+# %%
+PAPER = {
+    "documents": {"train": 296, "dev": 6, "test": 9},
+    "videos": {"train": 583, "dev": 12, "test": 17},
+    "mean_signs_per_video_train": 613,
+    "mean_phrases_per_video_train": 111,
+}
+
+# one "video" == one (document, signer) pair
+video_counts = (sents.groupby(["split", "doc_id", "participant"]).size()
+                .reset_index().groupby("split").size())
+
+compare = pd.DataFrame([
+    {
+        "split": split,
+        "docs (ours)": int((docs["split"] == split).sum()),
+        "docs (paper)": PAPER["documents"][split],
+        "videos (ours)": int(video_counts.get(split, 0)),
+        "videos (paper)": PAPER["videos"][split],
+    }
+    for split in ("train", "dev", "test")
+]).set_index("split")
+compare["Δ docs"] = compare["docs (ours)"] - compare["docs (paper)"]
+compare["Δ videos"] = compare["videos (ours)"] - compare["videos (paper)"]
+compare
+
+# %%
+train_videos = int(video_counts.get("train", 0))
+train_glosses = int((gl["split"] == "train").sum())
+train_sentences = int((sents["split"] == "train").sum())
+
+print("mean per training video")
+print(f"  signs     ours {train_glosses / train_videos:7.1f}   paper {PAPER['mean_signs_per_video_train']}")
+print(f"  phrases   ours {train_sentences / train_videos:7.1f}   paper {PAPER['mean_phrases_per_video_train']}")
+
+print("\ndocument accounting")
+indexed = len(documents)
+print(f"  indexed here            {indexed}")
+print(f"  paper's corpus size     404")
+print(f"  excluded ids            -{len(skipped['excluded_id'])}")
+print(f"  joke documents          -{len(skipped['joke'])}")
+print(f"  => ours                 {len(kept)}")
+print(f"  => paper (404 - 5 - {len(skipped['joke'])})    {404 - 5 - len(skipped['joke'])}")
+
+# %% [markdown]
 # ## Distributions
 
 # %%
@@ -405,9 +476,12 @@ plt.show()
 # - **Filtering matches the training loader**: five hardcoded document IDs plus
 #   everything tagged `<cmdp:Task>Joke</cmdp:Task>`. Any published "DGS" number
 #   must state this.
-# - **Document counts**: the `dgs.json` index ships 406 documents while the 2023
-#   TFDS build has 404 (384 train + 10 dev + 10 test). Worth reconciling before
-#   these counts go into a paper.
+# - **Document counts**: our `.INFO` index sees 406 documents, while the paper
+#   works from 404. Both then drop the same 5 excluded ids and the same 88 joke
+#   documents, so our totals sit exactly 2 above the paper's at every step
+#   (313 vs 311 kept; 298 vs 296 train). Dev and test match exactly. The residual
+#   2 documents are in the download index but not in the 2023 TFDS build — worth
+#   identifying before these counts go into a paper.
 #
 # ### Running and exporting
 #
