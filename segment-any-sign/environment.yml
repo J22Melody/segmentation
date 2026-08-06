@@ -1,0 +1,29 @@
+# Conda environment for the segment-any-sign project.
+#
+# Rebuild with:
+#   module load miniforge3
+#   conda env create -f environment.yml
+#   conda activate sas
+#
+# Python 3.11 matches the sign_language_segmentation package requirement
+# (>=3.11), so this env also works once we start importing the model code.
+#
+# Kept deliberately small: the dataset curation scripts read ELAN annotations
+# directly and need no TensorFlow, torch, or pose-format. When we need to run
+# the model, add the repo itself under the pip section:
+#   - -e ..
+# which pulls torch, pose-format and pytorch-lightning.
+name: sas
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pip
+  - jupyterlab
+  - ipykernel
+  - jupytext
+  - nbconvert
+  - matplotlib
+  - pandas
+  - pip:
+      - pympi-ling

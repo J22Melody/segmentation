@@ -1,0 +1,14 @@
+# Rendered reports (reports/*.html) are tracked; everything else generated is not.
+
+# derived data / scratch outputs
+stats.json
+*.csv
+*.pkl
+*.pose
+
+# generated notebooks — the source of truth is the percent-format .py
+*.ipynb
+
+# notebook and python cruft
+.ipynb_checkpoints/
+__pycache__/
