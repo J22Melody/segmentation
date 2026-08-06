@@ -16,6 +16,7 @@ which has seen several follow-ups:
 - [Stronger hand-centric features](https://arxiv.org/abs/2504.08593) — HaMeR features and heavier Transformer backbones.
 - [SAGE](https://openaccess.thecvf.com/content/ICCV2025W/MSLR/papers/Low_SAGE_Segment-Aware_Gloss-Free_Encoding_for_Token-Efficient_Sign_Language_Translation_ICCVW_2025_paper.pdf) — segment-informed tokens for efficient translation; up to 50% shorter inputs, 2.67x lower memory.
 - [Subtitle–signing alignment](https://arxiv.org/abs/2512.08094) — segmentation as an alignment signal.
+- [Extracting signs from weakly aligned corpora](https://www.sign-lang.uni-hamburg.de/lrec/pub/26039.html) — a study on LSF and LSM (sign-lang@LREC 2026).
 
 Our interest is how well these trained models generalise:
 
