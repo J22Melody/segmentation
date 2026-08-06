@@ -1,31 +1,30 @@
-# %% [markdown]
-# # Public DGS Corpus — data exploration
-#
-# Reads the Public DGS Corpus ELAN annotations from our copy on the server and
-# reports basic statistics.
-#
-# This file is a notebook in *percent* format: the `# %%` markers are rendered as
-# runnable cells by VS Code (and by Jupyter via jupytext), but the file itself is
-# plain Python, so it diffs and reviews cleanly in git.
-#
-# **Why we read the backup and not the TFDS build.** The 2023 TFDS build under
-# `/shares/iict-sp2.../tensorflow_datasets` stores annotations as *file paths*
-# pointing into `/shares/volk.cl.uzh/zifjia/tensorflow_datasets_2/downloads/`,
-# which we no longer have read permission for (group `s3it_t_hpc_volk.cl.uzh`).
-# The same files survive in a backup with identical basenames, so we read them
-# directly.
-#
-# This also means **no TensorFlow, torch or pose-format is needed** — the pose
-# tensors play no part in annotation statistics. Only `pympi-ling`, `pandas` and
-# `matplotlib`.
-#
-# ELAN parsing reuses the repo's own `get_elan_sentences`, so these numbers
-# reflect exactly what the model sees during training.
+# Public DGS Corpus — data exploration
 
-# %% [markdown]
-# ## Configuration
+Reads the Public DGS Corpus ELAN annotations from our copy on the server and
+reports basic statistics.
 
-# %%
+This file is a notebook in *percent* format: the `# %%` markers are rendered as
+runnable cells by VS Code (and by Jupyter via jupytext), but the file itself is
+plain Python, so it diffs and reviews cleanly in git.
+
+**Why we read the backup and not the TFDS build.** The 2023 TFDS build under
+`/shares/iict-sp2.../tensorflow_datasets` stores annotations as *file paths*
+pointing into `/shares/volk.cl.uzh/zifjia/tensorflow_datasets_2/downloads/`,
+which we no longer have read permission for (group `s3it_t_hpc_volk.cl.uzh`).
+The same files survive in a backup with identical basenames, so we read them
+directly.
+
+This also means **no TensorFlow, torch or pose-format is needed** — the pose
+tensors play no part in annotation statistics. Only `pympi-ling`, `pandas` and
+`matplotlib`.
+
+ELAN parsing reuses the repo's own `get_elan_sentences`, so these numbers
+reflect exactly what the model sees during training.
+
+## Configuration
+
+
+```python
 from pathlib import Path
 
 # eaf/cmdi backup — the files the TFDS records reference
@@ -44,13 +43,19 @@ LIMIT = None
 
 for path in (DOWNLOADS, SPLITS_PATH, ELAN_UTILS_PATH):
     print(f"{'OK  ' if path.exists() else 'MISSING'} {path}")
+```
 
-# %% [markdown]
-# ## Provenance
-#
-# Recorded in the output so any exported report says exactly what produced it.
+    OK   /home/zifjia/sp2/zifjia/backups/tensorflow_datasets_2/downloads
+    OK   /home/zifjia/segmentation/sign_language_segmentation/datasets/dgs/splits.json
+    OK   /home/zifjia/segmentation/sign_language_segmentation/datasets/dgs/utils.py
 
-# %%
+
+## Provenance
+
+Recorded in the output so any exported report says exactly what produced it.
+
+
+```python
 import datetime
 import platform
 import socket
@@ -73,14 +78,25 @@ print(f"git branch  {git('rev-parse', '--abbrev-ref', 'HEAD')}")
 print(f"git commit  {git('rev-parse', '--short', 'HEAD')}")
 print(f"git dirty   {'yes' if git('status', '--porcelain') else 'no'}")
 print(f"data        {DOWNLOADS}")
+```
 
-# %% [markdown]
-# ## Loading
-#
-# Documents are identified via the TFDS `.INFO` sidecars, which record the
-# original filename (`<doc_id>.eaf`) alongside each hash-named download.
+    timestamp   2026-08-06T15:24:27
+    host        u24-cva0000-302
+    python      3.11.15 (/home/zifjia/data/conda/envs/sas)
+    repo        /home/zifjia/segmentation
+    git branch  segment-any-sign
+    git commit  a6db76d
+    git dirty   yes
+    data        /home/zifjia/sp2/zifjia/backups/tensorflow_datasets_2/downloads
 
-# %%
+
+## Loading
+
+Documents are identified via the TFDS `.INFO` sidecars, which record the
+original filename (`<doc_id>.eaf`) alongside each hash-named download.
+
+
+```python
 import importlib.util
 import json
 
@@ -163,8 +179,14 @@ dev_ids, test_ids = set(splits.get("dev", [])), set(splits.get("test", []))
 documents = index_documents(DOWNLOADS)
 print(f"indexed {len(documents)} documents")
 print(f"splits.json: {len(dev_ids)} dev, {len(test_ids)} test")
+```
 
-# %%
+    indexed 406 documents
+    splits.json: 10 dev, 10 test
+
+
+
+```python
 # apply the same filtering the training loader uses
 skipped = {"excluded_id": [], "joke": [], "no_eaf": []}
 kept = []
@@ -185,8 +207,16 @@ if LIMIT:
 print(f"keeping {len(kept)} documents")
 for reason, ids in skipped.items():
     print(f"  skipped {reason:<12} {len(ids)}")
+```
 
-# %%
+    keeping 313 documents
+      skipped excluded_id  5
+      skipped joke         88
+      skipped no_eaf       0
+
+
+
+```python
 # parse every kept document into tidy per-sentence and per-gloss records
 doc_rows, sentence_rows, gloss_rows, failed = [], [], [], []
 
@@ -237,8 +267,35 @@ for index, doc_id in enumerate(kept, start=1):
 print(f"\nparsed {len(doc_rows)} documents, {len(failed)} failures")
 if failed:
     print(failed[:5])
+```
 
-# %%
+      ...50/313
+
+
+      ...100/313
+
+
+      ...150/313
+
+
+      ...200/313
+
+
+      ...250/313
+
+
+      ...300/313
+
+
+      ...313/313
+
+
+    
+    parsed 313 documents, 0 failures
+
+
+
+```python
 import pandas as pd
 
 docs = pd.DataFrame(doc_rows)
@@ -249,11 +306,116 @@ print(f"documents {len(docs):>9,}")
 print(f"sentences {len(sents):>9,}")
 print(f"glosses   {len(gl):>9,}")
 gl.head()
+```
 
-# %% [markdown]
-# ## Summary
+    documents       313
+    sentences    63,672
+    glosses     350,168
 
-# %%
+
+
+
+
+<div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>doc_id</th>
+      <th>split</th>
+      <th>participant</th>
+      <th>hand</th>
+      <th>gloss</th>
+      <th>start_ms</th>
+      <th>end_ms</th>
+      <th>duration_ms</th>
+      <th>overlaps_other</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>0</th>
+      <td>1176340</td>
+      <td>train</td>
+      <td>A</td>
+      <td>r</td>
+      <td>WISSEN2B^</td>
+      <td>175100</td>
+      <td>175240</td>
+      <td>140</td>
+      <td>False</td>
+    </tr>
+    <tr>
+      <th>1</th>
+      <td>1176340</td>
+      <td>train</td>
+      <td>A</td>
+      <td>r</td>
+      <td>$GEST-AUFMERKSAMKEIT1^</td>
+      <td>175400</td>
+      <td>175720</td>
+      <td>320</td>
+      <td>False</td>
+    </tr>
+    <tr>
+      <th>2</th>
+      <td>1176340</td>
+      <td>train</td>
+      <td>A</td>
+      <td>r</td>
+      <td>BEISPIEL1*</td>
+      <td>175820</td>
+      <td>175980</td>
+      <td>160</td>
+      <td>False</td>
+    </tr>
+    <tr>
+      <th>3</th>
+      <td>1176340</td>
+      <td>train</td>
+      <td>A</td>
+      <td>r</td>
+      <td>FUSSBALL2</td>
+      <td>176200</td>
+      <td>176440</td>
+      <td>240</td>
+      <td>False</td>
+    </tr>
+    <tr>
+      <th>4</th>
+      <td>1176340</td>
+      <td>train</td>
+      <td>A</td>
+      <td>r</td>
+      <td>VERGANGENHEIT1^*</td>
+      <td>176860</td>
+      <td>177060</td>
+      <td>200</td>
+      <td>False</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+
+
+## Summary
+
+
+```python
 print("=== Public DGS Corpus — basic statistics ===\n")
 print(f"  documents read              {len(docs):,}")
 for split in ("train", "dev", "test"):
@@ -273,8 +435,106 @@ summary = pd.DataFrame({
     "glosses per sentence": sents["n_glosses"].describe(percentiles=[0.1, 0.5, 0.9]),
 })
 summary.round(1)
+```
 
-# %%
+    === Public DGS Corpus — basic statistics ===
+    
+      documents read              313
+        train                    298
+        dev                      6
+        test                     9
+      sentences                   63,672
+      glosses                     350,168
+      sentences by participant    {'B': 32380, 'A': 31292}
+      glosses by hand             {'r': 312497, 'l': 37671}
+      sentences with no gloss     10
+      documents with no gloss     0
+      glosses overlapping another 5,974 (1.7%)
+
+
+
+
+
+<div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>gloss duration (ms)</th>
+      <th>sentence duration (ms)</th>
+      <th>glosses per sentence</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>count</th>
+      <td>350168.0</td>
+      <td>63672.0</td>
+      <td>63672.0</td>
+    </tr>
+    <tr>
+      <th>mean</th>
+      <td>260.4</td>
+      <td>2768.1</td>
+      <td>5.5</td>
+    </tr>
+    <tr>
+      <th>std</th>
+      <td>244.2</td>
+      <td>1671.1</td>
+      <td>3.6</td>
+    </tr>
+    <tr>
+      <th>min</th>
+      <td>20.0</td>
+      <td>40.0</td>
+      <td>0.0</td>
+    </tr>
+    <tr>
+      <th>10%</th>
+      <td>80.0</td>
+      <td>1000.0</td>
+      <td>2.0</td>
+    </tr>
+    <tr>
+      <th>50%</th>
+      <td>200.0</td>
+      <td>2380.0</td>
+      <td>5.0</td>
+    </tr>
+    <tr>
+      <th>90%</th>
+      <td>520.0</td>
+      <td>5040.0</td>
+      <td>10.0</td>
+    </tr>
+    <tr>
+      <th>max</th>
+      <td>7040.0</td>
+      <td>11800.0</td>
+      <td>32.0</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+
+
+
+```python
 # per-split totals
 by_split = pd.DataFrame({
     "documents": docs.groupby("split").size(),
@@ -283,11 +543,74 @@ by_split = pd.DataFrame({
 }).reindex(["train", "dev", "test"]).fillna(0).astype(int)
 by_split["glosses/sentence"] = (by_split["glosses"] / by_split["sentences"]).round(2)
 by_split
+```
 
-# %% [markdown]
-# ## Distributions
 
-# %%
+
+
+<div>
+<style scoped>
+    .dataframe tbody tr th:only-of-type {
+        vertical-align: middle;
+    }
+
+    .dataframe tbody tr th {
+        vertical-align: top;
+    }
+
+    .dataframe thead th {
+        text-align: right;
+    }
+</style>
+<table border="1" class="dataframe">
+  <thead>
+    <tr style="text-align: right;">
+      <th></th>
+      <th>documents</th>
+      <th>sentences</th>
+      <th>glosses</th>
+      <th>glosses/sentence</th>
+    </tr>
+    <tr>
+      <th>split</th>
+      <th></th>
+      <th></th>
+      <th></th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <th>train</th>
+      <td>298</td>
+      <td>61130</td>
+      <td>336137</td>
+      <td>5.5</td>
+    </tr>
+    <tr>
+      <th>dev</th>
+      <td>6</td>
+      <td>967</td>
+      <td>5992</td>
+      <td>6.2</td>
+    </tr>
+    <tr>
+      <th>test</th>
+      <td>9</td>
+      <td>1575</td>
+      <td>8039</td>
+      <td>5.1</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+
+
+## Distributions
+
+
+```python
 import matplotlib.pyplot as plt
 
 # categorical slots 1-3 of the validated reference palette
@@ -321,9 +644,10 @@ def style(ax, title, xlabel, ylabel="count"):
     ax.grid(axis="y", zorder=0)
     ax.set_axisbelow(True)
     return ax
+```
 
 
-# %%
+```python
 # gloss durations — clipped at the 99th percentile so the long tail
 # does not flatten the body of the distribution
 clip = gl["duration_ms"].quantile(0.99)
@@ -338,8 +662,19 @@ ax.annotate(f"median {median:,.0f} ms", xy=(median, ax.get_ylim()[1] * 0.92),
 style(ax, f"Gloss duration  (n={len(values):,}, clipped at p99 = {clip:,.0f} ms)", "duration (ms)")
 plt.tight_layout()
 plt.show()
+```
 
-# %%
+    findfont: Failed to find font weight semibold, now using 700.
+
+
+
+    
+![png](explore_files/explore_15_1.png)
+    
+
+
+
+```python
 # sentence durations
 clip_s = sents["duration_ms"].quantile(0.99)
 values_s = sents.loc[sents["duration_ms"] <= clip_s, "duration_ms"]
@@ -353,8 +688,16 @@ ax.annotate(f"median {median_s:,.0f} ms", xy=(median_s, ax.get_ylim()[1] * 0.92)
 style(ax, f"Sentence duration  (n={len(values_s):,}, clipped at p99 = {clip_s:,.0f} ms)", "duration (ms)")
 plt.tight_layout()
 plt.show()
+```
 
-# %%
+
+    
+![png](explore_files/explore_16_0.png)
+    
+
+
+
+```python
 # glosses per sentence
 counts = sents["n_glosses"].value_counts().sort_index()
 counts = counts[counts.index <= 30]
@@ -364,8 +707,16 @@ ax.bar(counts.index, counts.values, color=BLUE, width=0.82, zorder=2)
 style(ax, "Glosses per sentence  (0–30)", "glosses in sentence", "sentences")
 plt.tight_layout()
 plt.show()
+```
 
-# %%
+
+    
+![png](explore_files/explore_17_0.png)
+    
+
+
+
+```python
 # gloss duration by hand — the loader merges both hands into one list,
 # so this is a check on whether the two behave alike
 fig, ax = plt.subplots(figsize=(7, 3.4))
@@ -377,8 +728,16 @@ ax.legend(frameon=False, labelcolor=INK)
 style(ax, "Gloss duration by hand", "duration (ms)")
 plt.tight_layout()
 plt.show()
+```
 
-# %%
+
+    
+![png](explore_files/explore_18_0.png)
+    
+
+
+
+```python
 # corpus size per split
 fig, ax = plt.subplots(figsize=(5.2, 3.2))
 bars = ax.bar(by_split.index, by_split["documents"], color=BLUE, width=0.6, zorder=2)
@@ -386,42 +745,48 @@ ax.bar_label(bars, fmt="%d", padding=3, color=INK, fontsize=9)
 style(ax, "Documents per split", "", "documents")
 plt.tight_layout()
 plt.show()
+```
 
-# %% [markdown]
-# ## Notes and caveats
-#
-# Things to keep in mind when quoting these numbers:
-#
-# - **Both hands are merged.** `get_elan_sentences` concatenates the
-#   `Lexem_Gebärde_r_*` and `Lexem_Gebärde_l_*` tiers into one flat gloss list, so
-#   simultaneous two-handed signing appears as overlapping spans. The overlap
-#   percentage above quantifies how often. Sign-level BIO tagging cannot represent
-#   two signs at once, so these overlaps are a genuine source of label noise.
-# - **Glosses must be fully contained in a sentence** to be attached to it; any
-#   gloss straddling a sentence boundary is silently dropped, so the gloss total is
-#   a lower bound.
-# - **Sentences come from the German translation tier**, not from a prosodic or
-#   syntactic annotation — a "sentence" boundary here is a translation unit.
-# - **Filtering matches the training loader**: five hardcoded document IDs plus
-#   everything tagged `<cmdp:Task>Joke</cmdp:Task>`. Any published "DGS" number
-#   must state this.
-# - **Document counts**: the `dgs.json` index ships 406 documents while the 2023
-#   TFDS build has 404 (384 train + 10 dev + 10 test). Worth reconciling before
-#   these counts go into a paper.
-#
-# ### Running and exporting
-#
-# In VS Code, open this file and run the `# %%` cells directly, or use
-# `Run Current File in Interactive Window`.
-#
-# To regenerate `explore.md` — run from `segment-any-sign/`. This executes the
-# file top-to-bottom in a fresh kernel, so the report always matches the
-# committed source, and no intermediate `.ipynb` is written:
-#
-# ```bash
-# jupytext --to ipynb --execute datasets/public_dgs_corpus/explore.py -o - \
-#   | jupyter nbconvert --stdin --to markdown --output explore --output-dir datasets/public_dgs_corpus
-# ```
-#
-# Markdown rather than HTML because GitHub renders it inline. The plots land in
-# `explore_files/`; `explore.py`, `explore.md` and that folder are all tracked.
+
+    
+![png](explore_files/explore_19_0.png)
+    
+
+
+## Notes and caveats
+
+Things to keep in mind when quoting these numbers:
+
+- **Both hands are merged.** `get_elan_sentences` concatenates the
+  `Lexem_Gebärde_r_*` and `Lexem_Gebärde_l_*` tiers into one flat gloss list, so
+  simultaneous two-handed signing appears as overlapping spans. The overlap
+  percentage above quantifies how often. Sign-level BIO tagging cannot represent
+  two signs at once, so these overlaps are a genuine source of label noise.
+- **Glosses must be fully contained in a sentence** to be attached to it; any
+  gloss straddling a sentence boundary is silently dropped, so the gloss total is
+  a lower bound.
+- **Sentences come from the German translation tier**, not from a prosodic or
+  syntactic annotation — a "sentence" boundary here is a translation unit.
+- **Filtering matches the training loader**: five hardcoded document IDs plus
+  everything tagged `<cmdp:Task>Joke</cmdp:Task>`. Any published "DGS" number
+  must state this.
+- **Document counts**: the `dgs.json` index ships 406 documents while the 2023
+  TFDS build has 404 (384 train + 10 dev + 10 test). Worth reconciling before
+  these counts go into a paper.
+
+### Running and exporting
+
+In VS Code, open this file and run the `# %%` cells directly, or use
+`Run Current File in Interactive Window`.
+
+To regenerate `explore.md` — run from `segment-any-sign/`. This executes the
+file top-to-bottom in a fresh kernel, so the report always matches the
+committed source, and no intermediate `.ipynb` is written:
+
+```bash
+jupytext --to ipynb --execute datasets/public_dgs_corpus/explore.py -o - \
+  | jupyter nbconvert --stdin --to markdown --output explore --output-dir datasets/public_dgs_corpus
+```
+
+Markdown rather than HTML because GitHub renders it inline. The plots land in
+`explore_files/`; `explore.py`, `explore.md` and that folder are all tracked.

@@ -54,3 +54,48 @@ Start by benchmarking the 2023 model
 where @AmitMY has already explored autoresearch to improve segmentation scores.
 Then implement iterative, targeted improvements against the new benchmarks —
 until we can confidently say our model can segment any sign.
+
+## Layout
+
+```
+datasets/       one folder per corpus — curation and analysis
+literature/     material for the related-work section
+environment.yml conda env (`sas`)
+```
+
+## Setup
+
+```bash
+module load miniforge3
+conda env create -f environment.yml
+conda activate sas
+```
+
+Deliberately small: the dataset scripts read ELAN annotations directly and need
+no TensorFlow, torch or pose-format. When we start running the model itself, add
+`- -e ..` to the pip section of `environment.yml`.
+
+## Data exploration
+
+Analyses are written as percent-format Python (`# %%` cells), not notebooks, so
+they diff and review cleanly in git. Open e.g.
+[`datasets/public_dgs_corpus/explore.py`](datasets/public_dgs_corpus/explore.py)
+in VS Code and run the cells against the `sas` interpreter, or use the
+Interactive Window.
+
+To regenerate a report, from this directory:
+
+```bash
+jupytext --to ipynb --execute datasets/public_dgs_corpus/explore.py -o - \
+  | jupyter nbconvert --stdin --to markdown --output explore --output-dir datasets/public_dgs_corpus
+```
+
+This executes the file top-to-bottom in a fresh kernel, so the report always
+matches the committed source, and no intermediate `.ipynb` is written. It
+produces `explore.md` plus an `explore_files/` folder of plot images; both are
+tracked, and **GitHub renders them inline** — which HTML would not be.
+
+> **Note on the DGS data.** The 2023 TFDS build stores annotations as *paths*
+> into `/shares/volk.cl.uzh/...`, which we no longer have permission to read.
+> The same files survive in a backup under `~/sp2/zifjia/backups/`, which is what
+> the scripts point at. See the header of `explore.py` for details.
