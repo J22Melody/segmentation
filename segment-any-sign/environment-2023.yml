@@ -1,0 +1,28 @@
+# Isolated environment for running the **2023** segmentation model
+# (tag v2023 of sign-language-processing/segmentation).
+#
+# Deliberately separate from the `sas` env: the 2023 model needs an older
+# pose-format API, and pinning torch here keeps it from constraining whatever
+# the newer model ends up requiring. `sas` stays light and dependency-free for
+# data curation; this env is only used to run inference.
+#
+# Build with:
+#   module load miniforge3
+#   conda env create -f environment-2023.yml
+#
+# Then:
+#   conda activate sas2023
+#   python datasets/signsuisse/run_2023_segmentation.py
+#
+# Versions are those verified working against the v2023 E4s checkpoint.
+name: sas2023
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pip
+  - pip:
+      - torch==2.6.0
+      - pose-format==0.9.0
+      - numpy==1.26.4
+      - pympi-ling

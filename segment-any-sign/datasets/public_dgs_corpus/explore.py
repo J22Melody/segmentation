@@ -28,8 +28,9 @@
 # %%
 from pathlib import Path
 
-# eaf/cmdi backup — the files the TFDS records reference
-DOWNLOADS = Path("/home/zifjia/sp2/zifjia/backups/tensorflow_datasets_2/downloads")
+# eaf/cmdi backup — the files the TFDS records reference.
+# True path, not the ~/sp2 symlink into it.
+DOWNLOADS = Path("/shares/iict-sp2.ebling.cl.uzh/zifjia/backups/tensorflow_datasets_2/downloads")
 
 
 def find_repo_root():

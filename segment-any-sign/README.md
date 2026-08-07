@@ -97,5 +97,9 @@ tracked, and **GitHub renders them inline** — which HTML would not be.
 
 > **Note on the DGS data.** The 2023 TFDS build stores annotations as *paths*
 > into `/shares/volk.cl.uzh/...`, which we no longer have permission to read.
-> The same files survive in a backup under `~/sp2/zifjia/backups/`, which is what
-> the scripts point at. See the header of `explore.py` for details.
+> The same files survive in a backup under
+> `/shares/iict-sp2.ebling.cl.uzh/zifjia/backups/`, which is what the scripts
+> point at. See the header of `explore.py` for details.
+>
+> Scripts always use true `/shares/...` paths rather than the `~/easier` and
+> `~/sp2` symlinks, so they resolve identically for anyone on the cluster.
