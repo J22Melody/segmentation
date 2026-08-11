@@ -27,3 +27,6 @@ dependencies:
   - pandas
   - pip:
       - pympi-ling
+      # reading video frames (NCSLGR .mov) for annotation visualisation
+      - imageio
+      - imageio-ffmpeg
