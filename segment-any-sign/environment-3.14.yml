@@ -1,0 +1,68 @@
+# Environment for running the **current** segmentation model on Python 3.14.
+#
+# The package declares `requires-python = ">=3.11"`, but upstream CI tests only
+# 3.11 and the inference Dockerfile ships 3.12 — so 3.14 is permitted rather than
+# verified. This file records a combination that was actually tested end to end
+# on the UZH cluster: install succeeded, every module imported, and the README
+# example ran to completion (622 signs / 21 sentences from a DGS pose, ~42 s on
+# CPU), producing a valid ELAN file.
+#
+# Build:
+#   module load miniforge3          # on the cluster
+#   conda env create -f environment-3.14.yml
+#   source activate sas314
+#
+# Verify:
+#   wget -O example.pose https://datasets.sigma-sign-language.com/poses/holistic/dgs_corpus/1413451-11105600-11163240_a.pose
+#   wget -O example.mp4  https://www.sign-lang.uni-hamburg.de/meinedgs/videos/1413451-11105600-11163240/1413451-11105600-11163240_1a1.mp4
+#   pose_to_segments --pose example.pose --elan output.eaf --video example.mp4
+#
+# KNOWN LIMITATION — pose *estimation* cannot run on 3.14. Inference can.
+#
+#   `pose_to_segments` consumes a .pose file and never imports mediapipe, so the
+#   segmentation model itself is unaffected. Producing poses from video is the
+#   blocked part, and the reason is a version pincer rather than a missing wheel:
+#
+#     * pose-format's `utils/holistic.py` imports the legacy
+#       `mediapipe.python.solutions` API and pins `mediapipe<0.10.30`.
+#     * The newest mediapipe satisfying that pin is 0.10.21, whose wheels stop at
+#       cp312 — its binary fails on 3.14 with
+#       `undefined symbol: _PyThreadState_UncheckedGet` (a private CPython symbol
+#       removed after 3.12), so relabelling the wheel does not help.
+#     * mediapipe >= 0.10.30 ships version-agnostic py3-none wheels and installs
+#       and imports fine on 3.14 — but it removed the legacy solutions API that
+#       pose-format needs.
+#
+#   The ceiling for pose extraction is therefore Python 3.12. Run extraction in a
+#   3.11/3.12 env and the model here; the stages are independent. The real fix is
+#   upstream in https://github.com/sign-language-processing/pose porting
+#   holistic.py to mediapipe's Tasks API (HolisticLandmarker).
+#
+#   Unrelated but worth knowing on headless nodes: mediapipe pulls
+#   opencv-contrib-python, which needs libGL.so.1. Use
+#   opencv-contrib-python-headless instead if you hit that ImportError.
+#
+# Versions below are those verified working. Torch pulls the CUDA 13 stack
+# (~6 GB); on a CPU-only machine you may prefer the CPU wheel index.
+name: sas314
+channels:
+  - conda-forge
+dependencies:
+  - python=3.14
+  - pip
+  - pip:
+      # the model itself; swap for `-e ..` when developing locally
+      - git+https://github.com/sign-language-processing/segmentation
+
+      # pinned to the versions this was tested with — drop the pins if you
+      # would rather take whatever resolves
+      - torch==2.13.0
+      - numpy==2.5.2
+      - scikit-learn==1.9.0
+      - scipy==1.18.0
+      - pytorch-lightning==2.6.5
+      - torchmetrics==1.9.0
+      - pose-format==0.14.1
+      - pose-anonymization==0.0.1
+      - pympi-ling==1.71
+      - safetensors==0.8.0
