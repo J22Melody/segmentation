@@ -58,6 +58,38 @@ where @AmitMY has already explored autoresearch to improve segmentation scores.
 Then implement iterative, targeted improvements against the new benchmarks —
 until we can confidently say our model can segment any sign.
 
+## Potential venues
+
+Both go through [ACL Rolling Review](https://aclrollingreview.org/): you submit
+to an ARR cycle, reviews come back, then you *commit* the paper to a venue.
+The ARR submission deadline is the one that actually binds.
+
+### NAACL 2027 — confirmed
+
+- **Where:** San Francisco, California, USA (hybrid)
+- **When:** June 1–5, 2027
+- **ARR submission deadline:** **October 12, 2026**
+- <https://2027.naacl.org/>
+
+### ACL 2027 — dates not yet published
+
+- **Where:** Kyoto, Japan
+- **When:** August 17–22, 2027
+- **Deadlines:** all listed as TBA on the official site
+- <https://2027.aclweb.org/>
+
+Rough estimates, by analogy with previous years — **treat as placeholders and
+re-check once ACL 2027 publishes**:
+
+| | estimate | basis |
+|---|---|---|
+| ARR submission | ~January 2027 | NAACL 2027's ARR deadline falls ~7.5 months before its conference |
+| Commitment | ~April–May 2027 | ACL 2026 committed March 14 for a July 2–7 conference, ~3.5 months ahead |
+
+**The NAACL deadline is the near one.** October 12, 2026 is the first real
+target; ACL 2027 is the fallback roughly a quarter later, with the advantage
+that a paper reviewed in an earlier ARR cycle can be committed to either.
+
 ## Layout
 
 ```
