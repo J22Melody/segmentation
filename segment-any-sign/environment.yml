@@ -27,6 +27,9 @@ dependencies:
   - pandas
   - pip:
       - pympi-ling
+      # segmentation metrics + their tests
+      - scikit-learn
+      - pytest
       # reading video frames (NCSLGR .mov) for annotation visualisation
       - imageio
       - imageio-ffmpeg
