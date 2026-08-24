@@ -1,16 +1,18 @@
-# Segment Any Text
+# Segment Any Text: A Universal Approach for Robust, Efficient and Adaptable Sentence Segmentation
 
-- **Authors:** TODO verify (Frohmann et al.?)
-- **Venue:** TODO verify (EMNLP 2024?)
-- **Link:** TODO verify
+- **Authors:** Markus Frohmann, Igor Sterner, Ivan Vulić, Benjamin Minixhofer, Markus Schedl
+- **Venue:** EMNLP 2024 (main conference)
+- **Link:** https://aclanthology.org/2024.emnlp-main.665/
 - **Status:** not yet read
 
 ## Why it is here
 
-Named in the proposal's related work. Universal sentence segmentation for text —
-the closest analogue to what we want for sign language: one robust model that
-works across languages and domains rather than one trained per corpus.
+The closest analogue to what we want, in text: one sentence segmentation model
+that is robust across languages and domains rather than trained per corpus —
+including on input without punctuation or casing, which is the text equivalent
+of the weak cues we work with.
 
 ## Notes
 
-_(findings go here)_
+- _Worth reading for how they structure the evaluation: a universal claim needs a
+  benchmark broad enough to support it, which is the same problem we have._

@@ -34,8 +34,11 @@ progress from it.
 
 ## Related work
 
-- Segment Anything (SAM 3)
-- Segment Any Text
+- [Segment Anything](https://arxiv.org/abs/2304.02643) — Meta's SAM series: [SAM](https://arxiv.org/abs/2304.02643) (images, 2023), [SAM 2](https://arxiv.org/abs/2408.00714) (video, 2024), [SAM 3](https://arxiv.org/abs/2511.16719) (open-vocabulary concepts, 2025).
+- [Segment Any Text](https://aclanthology.org/2024.emnlp-main.665/) — universal sentence segmentation for text, robust across languages and domains (EMNLP 2024).
+- [MHB](https://arxiv.org/abs/2511.19907) — handshape-aware boundary detection for ASL, evaluated on the ASLLRP corpus. Our closest external baseline.
+
+Per-paper notes are collected in [`literature/`](literature/).
 
 ## Data
 
