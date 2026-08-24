@@ -17,8 +17,9 @@ which has seen several follow-ups:
 - [SAGE](https://openaccess.thecvf.com/content/ICCV2025W/MSLR/papers/Low_SAGE_Segment-Aware_Gloss-Free_Encoding_for_Token-Efficient_Sign_Language_Translation_ICCVW_2025_paper.pdf) — segment-informed tokens for efficient translation; up to 50% shorter inputs, 2.67x lower memory.
 - [Subtitle–signing alignment](https://arxiv.org/abs/2512.08094) — segmentation as an alignment signal.
 - [Extracting signs from weakly aligned corpora](https://www.sign-lang.uni-hamburg.de/lrec/pub/26039.html) — a study on LSF and LSM (sign-lang@LREC 2026).
+- [MHB](https://arxiv.org/abs/2511.19907) — handshape-aware boundary detection for ASL, evaluated on the ASLLRP corpus.
 
-Our interest is how well these trained models generalise:
+Our interest is how well these trained models generalize:
 
 - The original model was trained and evaluated on DGS; we have a small study
   transferring to LSF, both zero-shot and fine-tuned.
@@ -28,41 +29,16 @@ Our interest is how well these trained models generalise:
   (ISLR datasets), and false positives when no signer is present.
 - Special linguistic phenomena such as fingerspelling and indexing may need
   dedicated treatment.
+- We want to be able to generalize and switch between different segmentation granularities more smoothly.
+  In our 2023 model, we have trained at both the sign and phrase levels, but ideally this could be controlled by a single parameter, as in [Segment Any Text](https://aclanthology.org/2024.emnlp-main.665/).
 
 The aim is a systematic benchmark for the task, and a way to track future
-progress from it.
-
-## Related work
-
-- [Segment Anything](https://arxiv.org/abs/2304.02643) — Meta's SAM series: [SAM](https://arxiv.org/abs/2304.02643) (images, 2023), [SAM 2](https://arxiv.org/abs/2408.00714) (video, 2024), [SAM 3](https://arxiv.org/abs/2511.16719) (open-vocabulary concepts, 2025).
-- [Segment Any Text](https://aclanthology.org/2024.emnlp-main.665/) — universal sentence segmentation for text, robust across languages and domains (EMNLP 2024).
-- [MHB](https://arxiv.org/abs/2511.19907) — handshape-aware boundary detection for ASL, evaluated on the ASLLRP corpus. Our closest external baseline.
-
-Per-paper notes are collected in [`literature/`](literature/).
-
-## Data
-
-Datasets with gloss annotations, to be curated in [`datasets/`](datasets/):
-
-- Public DGS Corpus
-- BSL Corpus (TODO: request access)
-- More to be researched, as part of an initial literature review phase
-
-We can also annotate our own Swiss data (@agoehring): SwissSLi, Signsuisse.
-
-## Method
-
-Start by benchmarking the 2023 model
-([sign-language-processing/segmentation](https://github.com/sign-language-processing/segmentation)),
-where @AmitMY has already explored autoresearch to improve segmentation scores.
-Then implement iterative, targeted improvements against the new benchmarks —
-until we can confidently say our model can segment any sign.
+progress from it; the aim is also to provide a handy, transparent segmentation tool for downstream use.
 
 ## Potential venues
 
-Both go through [ACL Rolling Review](https://aclrollingreview.org/): you submit
+[ACL Rolling Review](https://aclrollingreview.org/): you submit
 to an ARR cycle, reviews come back, then you *commit* the paper to a venue.
-The ARR submission deadline is the one that actually binds.
 
 ### NAACL 2027 — confirmed
 
@@ -78,6 +54,31 @@ The ARR submission deadline is the one that actually binds.
 - **Deadlines:** January, 2027 (estimate)
 - <https://2027.aclweb.org/>
 
+## Related work
+
+- [Segment Anything](https://arxiv.org/abs/2304.02643) — Meta's SAM series: [SAM](https://arxiv.org/abs/2304.02643) (images, 2023), [SAM 2](https://arxiv.org/abs/2408.00714) (video, 2024), [SAM 3](https://arxiv.org/abs/2511.16719) (open-vocabulary concepts, 2025).
+- [Segment Any Text](https://aclanthology.org/2024.emnlp-main.665/) — universal sentence segmentation for text, robust across languages and domains (EMNLP 2024).
+
+Per-paper notes are collected in [`literature/`](literature/).
+
+## Data
+
+Datasets with gloss annotations, to be curated in [`datasets/`](datasets/):
+
+- Public DGS Corpus
+- BSL Corpus (TODO: download or crawl the videos)
+- Signsuisse (DSGS; TODO: gloss-level annotation @agoehring)
+- NCSLGR (ASL)
+- More to be researched, as part of an initial literature review phase
+
+## Method
+
+Start by benchmarking the 2023 model
+([sign-language-processing/segmentation](https://github.com/sign-language-processing/segmentation)),
+where @AmitMY has already explored autoresearch to improve segmentation scores.
+Then implement iterative, targeted improvements against the new benchmarks —
+until we can confidently say: **our model can segment any sign.**
+
 ## Setup
 
 ```bash
@@ -89,32 +90,3 @@ conda activate sas
 Deliberately small: the dataset scripts read ELAN annotations directly and need
 no TensorFlow, torch or pose-format. When we start running the model itself, add
 `- -e ..` to the pip section of `environment.yml`.
-
-## Data exploration
-
-Analyses are written as percent-format Python (`# %%` cells), not notebooks, so
-they diff and review cleanly in git. Open e.g.
-[`datasets/public_dgs_corpus/explore.py`](datasets/public_dgs_corpus/explore.py)
-in VS Code and run the cells against the `sas` interpreter, or use the
-Interactive Window.
-
-To regenerate a report, from this directory:
-
-```bash
-jupytext --to ipynb --execute datasets/public_dgs_corpus/explore.py -o - \
-  | jupyter nbconvert --stdin --to markdown --output explore --output-dir datasets/public_dgs_corpus
-```
-
-This executes the file top-to-bottom in a fresh kernel, so the report always
-matches the committed source, and no intermediate `.ipynb` is written. It
-produces `explore.md` plus an `explore_files/` folder of plot images; both are
-tracked, and **GitHub renders them inline** — which HTML would not be.
-
-> **Note on the DGS data.** The 2023 TFDS build stores annotations as *paths*
-> into `/shares/volk.cl.uzh/...`, which we no longer have permission to read.
-> The same files survive in a backup under
-> `/shares/iict-sp2.ebling.cl.uzh/zifjia/backups/`, which is what the scripts
-> point at. See the header of `explore.py` for details.
->
-> Scripts always use true `/shares/...` paths rather than the `~/easier` and
-> `~/sp2` symlinks, so they resolve identically for anyone on the cluster.
