@@ -29,9 +29,10 @@ Public DGS Corpus, test split (9 documents / 17 videos). Laid out like Table 2 o
 the 2023 paper: sign and phrase side by side as column groups rather than
 stacked.
 
-**Rows above the rule are transcribed from published papers; rows below are our
-own runs.** Published rows are copied verbatim, including the cells their authors
-left empty — nothing is recomputed or back-filled.
+Rows above the *our benchmark results below* divider are transcribed from
+published papers; rows under it are our own runs. Published rows are copied
+verbatim, including the cells their authors left empty — nothing is recomputed or
+back-filled.
 
 Columns: `F1-ma` and `F1-mi` are frame-level F1 over O/B/I, macro- and
 micro-averaged (see [`../metrics/`](../metrics/)); `IoU` is pooled frame overlap;
@@ -47,9 +48,9 @@ micro-averaged (see [`../metrics/`](../metrics/)); `IoU` is pooled frame overlap
 | M&J 2023 E1s\* (60/50, 90/90) | paper, Tab. 2 | — | — | 0.69 | 1.03 | — | — | — | 0.85 | 1.02 | — |
 | M&J 2023 E4s\* (60/50, 80/80) | paper, Tab. 2 | — | — | 0.63 | 1.06 | — | — | — | 0.79 | 1.12 | — |
 | Hands-On 2025 (n/r) | paper, Tab. II | 0.86 | — | 0.76 | 0.98 | — | — | — | — | — | — |
-| | | | | | | | | | | | |
-| **2023 E1s (60/50, 90/90)** | ours | **0.638** | 0.754 | **0.688** | **1.026** | **0.441** | **0.662** | 0.880 | **0.847** | **0.971** | **0.361** |
-| **2023 E4s (60/50, 80/80)** | ours | **0.592** | 0.749 | **0.628** | **1.061** | **0.429** | **0.626** | 0.883 | **0.790** | **1.060** | **0.376** |
+| *— our benchmark results below —* | | | | | | | | | | | |
+| 2023 E1s (60/50, 90/90) | ours | 0.638 | 0.754 | 0.688 | 1.026 | 0.441 | 0.662 | 0.880 | 0.847 | 0.971 | 0.361 |
+| 2023 E4s (60/50, 80/80) | ours | 0.592 | 0.749 | 0.628 | 1.061 | 0.429 | 0.626 | 0.883 | 0.790 | 1.060 | 0.376 |
 
 Regenerate our rows with:
 
@@ -76,24 +77,6 @@ translation protocol — we have not confirmed it is the same 17 videos. Its own
 two baseline rows reproduce the 2023 E1s/E4s numbers exactly, which at least
 fixes it to the same reference points. Unread as yet; see
 [`../literature/2025-hands-on/`](../literature/2025-hands-on/).
-
-### Reproduction of Moryossef & Jiang (2023)
-
-The DGS numbers are verified against the paper before anything else is added, so
-that a later model's score means something:
-
-| model | level | frame F1 | (paper) | IoU | (paper) |
-|---|---|---|---|---|---|
-| E1s | sign | 0.6378 | 0.63 | 0.6878 | 0.69 |
-| E1s | phrase | 0.6615 | 0.65 | 0.8471 | 0.85 |
-| E4s | sign | 0.5924 | 0.59 | 0.6280 | 0.63 |
-| E4s | phrase | 0.6258 | 0.62 | 0.7902 | 0.79 |
-
-IoU is compared against the *tuned-decoding* rows (E1s\*/E4s\*), since that is
-what we run. Frame F1 is decoding-independent and so comes from the unstarred
-rows. `%`, `F1-mi` and `mF1S` are not compared: the paper's percentages come from
-its `likeliest` (argmax) decoding while ours use thresholds, and it publishes no
-value at all for the other two.
 
 `predict_dgs_2023.py` **drives the original v2023 code** rather than
 reimplementing it — the source is vendored out of git into `.cache/v2023_src/`
