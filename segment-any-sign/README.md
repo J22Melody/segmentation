@@ -87,6 +87,15 @@ conda env create -f environment.yml
 conda activate sas
 ```
 
-Deliberately small: the dataset scripts read ELAN annotations directly and need
-no TensorFlow, torch or pose-format. When we start running the model itself, add
-`- -e ..` to the pip section of `environment.yml`.
+`sas` is deliberately small — dataset curation, the metrics and `score.py` need
+only numpy and scikit-learn, no torch and no TensorFlow.
+
+Running a model needs its own environment, because each one pins a different
+stack. The 2023 model uses `sas2023`:
+
+```bash
+conda env create -f environment-2023.yml
+conda activate sas2023
+```
+
+See [`benchmark/`](benchmark/) for how the two are used together.

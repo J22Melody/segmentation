@@ -23,11 +23,26 @@ python benchmark/score.py benchmark/predictions/*.json
 Predictions land in `benchmark/predictions/*.json` — gold and predicted segments
 plus run-length-encoded frame labels, a few hundred KB per run.
 
-## Reproduction of Moryossef & Jiang (2023)
+## Results
 
-The DGS numbers are verified against the paper before anything else is added,
-so a later model's score means something. Test split, 9 documents / 17 videos —
-matching the paper's own count:
+Public DGS Corpus, test split (9 documents / 17 videos). Laid out like Table 2 of
+the 2023 paper — sign and phrase kept separate — with `mF1S` added. `%` is
+optimal at 1.
+
+| Model | Sign F1 | Sign IoU | Sign % | Sign mF1S | Phrase F1 | Phrase IoU | Phrase % | Phrase mF1S |
+|---|---|---|---|---|---|---|---|---|
+| 2023 E1s | 0.638 | 0.688 | 1.026 | 0.441 | 0.662 | 0.847 | 0.971 | 0.361 |
+| 2023 E4s | 0.592 | 0.628 | 1.061 | 0.429 | 0.626 | 0.790 | 1.060 | 0.376 |
+
+Frame accuracy (micro F1) is computed too, and reported by `score.py`: sign
+0.754 / 0.749 and phrase 0.880 / 0.883 for E1s / E4s.
+
+E1s uses phrase thresholds 90/90, E4s 80/80 — see *Decoding thresholds* below.
+
+### Reproduction of Moryossef & Jiang (2023)
+
+The DGS numbers are verified against the paper before anything else is added, so
+that a later model's score means something:
 
 | model | level | frame F1 | (paper) | accuracy | (paper) | IoU | (paper) |
 |---|---|---|---|---|---|---|---|
@@ -35,6 +50,10 @@ matching the paper's own count:
 | E1s | phrase | 0.6615 | 0.65 | 0.8799 | 0.88 | 0.8471 | 0.82 |
 | E4s | sign | 0.5924 | 0.59 | 0.7488 | 0.75 | 0.6280 | 0.63 |
 | E4s | phrase | 0.6258 | 0.62 | 0.8832 | 0.88 | 0.7902 | 0.79 |
+
+`%` is not compared: the paper's published percentages come from its `likeliest`
+(argmax) decoding, while these use thresholds. `mF1S` has no published value —
+the 2023 work did not report it.
 
 `predict_dgs_2023.py` **drives the original v2023 code** rather than
 reimplementing it — the source is vendored out of git into `.cache/v2023_src/`

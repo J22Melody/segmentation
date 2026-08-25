@@ -25,7 +25,7 @@ import numpy as np  # noqa: E402
 
 from metrics import (aggregate, evaluate_level, frame_f1,  # noqa: E402
                      frame_f1_micro, global_iou, segment_counts,
-                     segment_percentage)
+                     segment_percentage)  # evaluate_level is used by --per-clip
 
 LEVELS = ("sign", "phrase")
 COLUMNS = ("frame_f1", "frame_f1_micro", "iou", "percentage", "mf1s")
@@ -45,23 +45,24 @@ def score_clip(clip: dict, level: str) -> dict:
     `floor`-converted gold. The two use different golds; that asymmetry is the
     original's, reproduced rather than tidied away.
 
-    Files written before frame labels were captured fall back to deriving them
-    from the segments, which is not comparable — the fallback is flagged.
+    Prediction files must carry frame labels. Deriving them from the decoded
+    segments instead would silently compute a different quantity, so that is an
+    error rather than a fallback.
     """
     pred, gold = clip["pred"].get(level, []), clip["gold"].get(level, [])
     num_frames = clip["num_frames"]
 
-    if "gold_bio" in clip and "pred_bio" in clip:
-        gold_bio, pred_bio = unrle(clip["gold_bio"][level]), unrle(clip["pred_bio"][level])
-        # labels=None reproduces the 2023 evaluation, which called sklearn without
-        # a label set and so averaged only over classes present. A clip with no
-        # annotation, predicted empty, scores 1.0 rather than 0.33.
-        result = {"frame_f1": frame_f1(pred_bio, gold_bio, labels=None),
-                  "frame_f1_micro": frame_f1_micro(pred_bio, gold_bio, labels=None)}
-    else:
-        derived = evaluate_level(pred, gold, num_frames)
-        result = {"frame_f1": derived["frame_f1"],
-                  "frame_f1_micro": derived["frame_f1_micro"]}
+    if "gold_bio" not in clip or "pred_bio" not in clip:
+        raise SystemExit(
+            f"clip {clip.get('id')} has no frame labels; re-run the predict step")
+
+    gold_bio, pred_bio = unrle(clip["gold_bio"][level]), unrle(clip["pred_bio"][level])
+    # labels=None reproduces the 2023 evaluation, which called sklearn without a
+    # label set and so averaged only over classes present. A clip with no
+    # annotation, predicted empty, scores 1.0 rather than 0.33 — worth 0.12 on
+    # the DGS test mean.
+    result = {"frame_f1": frame_f1(pred_bio, gold_bio, labels=None),
+              "frame_f1_micro": frame_f1_micro(pred_bio, gold_bio, labels=None)}
 
     result["iou"] = global_iou(pred, gold, num_frames)
     result["percentage"] = segment_percentage(pred, gold)
