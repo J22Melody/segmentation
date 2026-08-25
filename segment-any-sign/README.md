@@ -35,6 +35,13 @@ Our interest is how well these trained models generalize:
 The aim is a systematic benchmark for the task, and a way to track future
 progress from it; the aim is also to provide a handy, transparent segmentation tool for downstream use.
 
+### Related work
+
+- [Segment Anything](https://arxiv.org/abs/2304.02643) — Meta's SAM series: [SAM](https://arxiv.org/abs/2304.02643) (images, 2023), [SAM 2](https://arxiv.org/abs/2408.00714) (video, 2024), [SAM 3](https://arxiv.org/abs/2511.16719) (open-vocabulary concepts, 2025).
+- [Segment Any Text](https://aclanthology.org/2024.emnlp-main.665/) — universal sentence segmentation for text, robust across languages and domains (EMNLP 2024).
+
+Per-paper notes are collected in [`literature/`](literature/).
+
 ## Potential venues
 
 [ACL Rolling Review](https://aclrollingreview.org/): you submit
@@ -53,13 +60,6 @@ to an ARR cycle, reviews come back, then you *commit* the paper to a venue.
 - **When:** August 17–22, 2027
 - **Deadlines:** January, 2027 (estimate)
 - <https://2027.aclweb.org/>
-
-## Related work
-
-- [Segment Anything](https://arxiv.org/abs/2304.02643) — Meta's SAM series: [SAM](https://arxiv.org/abs/2304.02643) (images, 2023), [SAM 2](https://arxiv.org/abs/2408.00714) (video, 2024), [SAM 3](https://arxiv.org/abs/2511.16719) (open-vocabulary concepts, 2025).
-- [Segment Any Text](https://aclanthology.org/2024.emnlp-main.665/) — universal sentence segmentation for text, robust across languages and domains (EMNLP 2024).
-
-Per-paper notes are collected in [`literature/`](literature/).
 
 ## Data
 

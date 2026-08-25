@@ -97,40 +97,54 @@ def score_file(path: Path) -> dict:
     }
 
 
+def model_label(row: dict) -> str:
+    """Model name carrying its decoding thresholds, e.g. `2023 E4s (60/50, 80/80)`.
+
+    The thresholds belong to the model rather than to a level group — they differ
+    per level (the tuned phrase pair is 90/90 for E1s but 80/80 for E4s) and the
+    scores move with them, so a row is not interpretable without them. Written as
+    `sign, phrase` in that order; a level the dataset does not annotate is
+    omitted.
+    """
+    pairs = [f"{p[0]:g}/{p[1]:g}" for level in LEVELS
+             if row["levels"].get(level) and (p := row["thresholds"].get(level))]
+    return f"{row['model']} ({', '.join(pairs)})" if pairs else row["model"]
+
+
 def format_table(rows: list[dict]) -> str:
     """One row per model, with Sign and Phrase as column groups.
 
-    Laid out like Table 2 of the 2023 paper, which groups the levels side by
-    side rather than stacking them, so two models are compared at a glance.
-    Decoding thresholds are shown per level, since they differ (the tuned phrase
-    setting is 90/90 for E1s but 80/80 for E4s) and the scores move with them.
+    Laid out like Table 2 of the 2023 paper, which groups the levels side by side
+    rather than stacking them, so models are compared at a glance. Both frame F1
+    averagings are named in full — `F1-ma` / `F1-mi` — because "acc" hid that the
+    micro figure is the same metric under a different averaging.
     """
     metrics = ("frame_f1", "frame_f1_micro", "iou", "percentage", "mf1s")
-    short = {"frame_f1": "F1", "frame_f1_micro": "acc", "iou": "IoU",
+    short = {"frame_f1": "F1-ma", "frame_f1_micro": "F1-mi", "iou": "IoU",
              "percentage": "%", "mf1s": "mF1S"}
 
-    group = f"{'b/o':>7} " + " ".join(f"{short[m]:>6}" for m in metrics)
+    labels = [model_label(row) for row in rows]
+    name_width = max([len("model")] + [len(label) for label in labels])
+
+    group = " ".join(f"{short[m]:>6}" for m in metrics)
     width = len(group)
-    head1 = f"{'model':<14} {'dataset':<18} {'split':<5} {'clips':>5} │ " \
+    head1 = f"{'model':<{name_width}} {'dataset':<18} {'split':<5} │ " \
             f"{'Sign'.center(width)} │ {'Phrase'.center(width)}"
-    head2 = f"{'':<14} {'':<18} {'':<5} {'':>5} │ {group} │ {group}"
+    head2 = f"{'':<{name_width}} {'':<18} {'':<5} │ {group} │ {group}"
     rule = "─" * len(head1)
 
     lines = [rule, head1, head2, rule]
-    for row in rows:
+    for row, label in zip(rows, labels):
         cells = []
         for level in LEVELS:
             values = row["levels"].get(level)
-            pair = row["thresholds"].get(level)
             if values is None:
                 # the dataset does not annotate this level: blank, not zero
-                cells.append(f"{'—':>7} " + " ".join(f"{'—':>6}" for _ in metrics))
+                cells.append(" ".join(f"{'—':>6}" for _ in metrics))
                 continue
-            label = f"{pair[0]:g}/{pair[1]:g}" if pair else "-"
-            cells.append(f"{label:>7} " + " ".join(f"{values[m]:>6.3f}" for m in metrics))
-        lines.append(
-            f"{row['model']:<14} {row['dataset']:<18} {row['split']:<5} "
-            f"{row['clips']:>5} │ {cells[0]} │ {cells[1]}")
+            cells.append(" ".join(f"{values[m]:>6.3f}" for m in metrics))
+        lines.append(f"{label:<{name_width}} {row['dataset']:<18} "
+                     f"{row['split']:<5} │ {cells[0]} │ {cells[1]}")
     lines.append(rule)
     return "\n".join(lines)
 

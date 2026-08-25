@@ -7,7 +7,7 @@ short README for basic details and a place to record findings as we read.
 |---|---|---|
 | [2023-linguistically-motivated-segmentation](2023-linguistically-motivated-segmentation/) | EMNLP Findings 2023 | the model this project continues |
 | [2025-temporal-boundary-identification](2025-temporal-boundary-identification/) | ACL SRW 2025 | subtitle units, BIO + optical flow, Seq2Seq |
-| [2025-hands-on](2025-hands-on/) | arXiv 2025 | HaMeR hand features, heavier backbones |
+| [2025-hands-on](2025-hands-on/) | arXiv 2025 | HaMeR hand features; the only follow-up with DGS numbers |
 | [2025-sage](2025-sage/) | ICCVW 2025 | segmentation used for efficient translation |
 | [2025-segment-embed-align](2025-segment-embed-align/) | arXiv 2025 | ours — segmentation for subtitle alignment |
 | [2026-mhb-boundary-detection](2026-mhb-boundary-detection/) | sign-lang@LREC 2026 | ASL boundary detection, evaluated on ASLLRP |
