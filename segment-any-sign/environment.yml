@@ -5,14 +5,14 @@
 #   conda env create -f environment.yml
 #   conda activate sas
 #
-# Python 3.11 matches the sign_language_segmentation package requirement
-# (>=3.11), so this env also works once we start importing the model code.
+# This is the env for **the latest model** (2026) as well as for dataset
+# curation and scoring. Only the 2023 model gets an env of its own
+# (`environment-2023.yml`), because its pose-format 0.3.2 pin cannot coexist
+# with the >=0.8.1 the 2026 model needs.
 #
-# Kept deliberately small: the dataset curation scripts read ELAN annotations
-# directly and need no TensorFlow, torch, or pose-format. When we need to run
-# the model, add the repo itself under the pip section:
-#   - -e ..
-# which pulls torch, pose-format and pytorch-lightning.
+# Python 3.11 matches the sign_language_segmentation requirement (>=3.11).
+# Note 3.14 does not work: pose estimation needs mediapipe's removed legacy
+# Holistic API.
 name: sas
 channels:
   - conda-forge
@@ -33,3 +33,13 @@ dependencies:
       # reading video frames (NCSLGR .mov) for annotation visualisation
       - imageio
       - imageio-ffmpeg
+      # the 2026 model, its preprocessing and the shipped dist/2026 weights.
+      # Installed from the checkout one level up, so a local edit to the model
+      # code is picked up without reinstalling.
+      - -e ..
+      - numpy<2
+      # reading the DGS TFDS build — the same source the 2023 benchmark reads,
+      # so both models are scored on identical input poses.
+      - tensorflow-cpu
+      - tensorflow-datasets
+      - sign-language-datasets

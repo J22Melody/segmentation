@@ -3,6 +3,13 @@
 One folder per corpus, each with an `explore.py` and a generated `explore.md`.
 Raw data stays on the shared filesystem, never in this repo.
 
+A corpus used by the benchmark also gets a `load.py`: **one clip list, one set of
+gold annotations, shared by every model.** Only
+[`public_dgs_corpus/load.py`](public_dgs_corpus/load.py) exists so far. Models
+differ in how they preprocess a pose before it enters the network — that part
+lives in [`../benchmark/`](../benchmark/) — but never in which clips they see or
+what they are scored against.
+
 The benchmark needs **per-sign boundaries** — that is the dividing line below.
 
 | dataset | language | sign-level | scale | state |

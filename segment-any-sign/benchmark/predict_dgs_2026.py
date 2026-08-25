@@ -1,0 +1,171 @@
+"""Run the 2026 segmentation model over a Public DGS Corpus split.
+
+Stage 1 of 2, writing the same prediction JSON `score.py` already reads, so the
+2026 model lands in the same table as the 2023 one with no new scoring code.
+
+Data comes from [`../datasets/public_dgs_corpus/load.py`](../datasets/public_dgs_corpus/load.py) — the same clips, filters and gold
+annotations the 2023 run uses. Everything below that is the 2026 model's own:
+
+  * **Preprocessing** mirrors `sign_language_segmentation.datasets.common
+    .load_and_augment` with `split != TRAIN`: `preprocess_pose` (body and hands
+    only, legs hidden, holistic reduced, mean/std normalised), then velocity
+    features appended, giving the 50 joints x 6 dims the checkpoint expects. No
+    augmentation — fps_aug, frame dropout and body-part dropout are training-only.
+  * **BIO labels** follow the same branch upstream takes at eval: the shipped
+    config sets `fps_aug: true`, and `load_and_augment` reads that flag to pick
+    `create_bio_from_times` (searchsorted over frame timestamps) over `create_bio`
+    (floor/ceil on a fixed fps). The flag does no augmenting outside training, but
+    it does select the label builder, so it is honoured here.
+  * **Decoding** is `likeliest_probs_to_segments` — plain argmax. The 2026 README
+    is explicit that threshold decoding was tried and rejected, so unlike the 2023
+    row this one has no `b/o` to report.
+  * **Chunking** is the model's own: `PoseTaggingModel` splits anything longer
+    than `hparams.num_frames` (1024) internally, so the full clip is passed in one
+    call exactly as `evaluate.py` does.
+
+Two conventions are translated on the way out:
+
+  * BIO ids. Upstream 2026 is `UNK=0, O=1, B=2, I=3`; ours (and 2023's) is
+    `O=0, B=1, I=2`. Frame labels are remapped, and `UNK` cannot occur since we
+    never pad a batch of one.
+  * Gold frames. Upstream derives gold segments from the BIO labels, which is
+    kept here — it is that model's protocol. The 2023 row floors both bounds
+    instead. See `README.md`; the two differ by at most a frame.
+
+**fps.** The published 2026 numbers are at 50fps. The only DGS config built on
+this cluster is `holistic-25`, so this runs at 25fps and the row is the model's
+25fps operating point, not the headline. See `README.md`.
+
+    conda activate sas
+    python benchmark/predict_dgs_2026.py --split test
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+import time
+from pathlib import Path
+
+import numpy as np
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from datasets.public_dgs_corpus import load as dgs_data  # noqa: E402
+
+# upstream 2026 ids -> ours. UNK has no counterpart; it only appears as batch
+# padding, which cannot happen at batch size 1.
+BIO_2026_TO_OURS = {1: 0, 2: 1, 3: 2}
+
+LEVELS = {"sign": "sign", "sentence": "phrase"}  # their name -> ours
+
+
+def rle(values) -> list[list[int]]:
+    """Run-length encode frame labels, so they fit in the JSON."""
+    out: list[list[int]] = []
+    for value in np.asarray(values).tolist():
+        if out and out[-1][0] == value:
+            out[-1][1] += 1
+        else:
+            out.append([int(value), 1])
+    return out
+
+
+def prepare(pose, fps: float):
+    """Apply the 2026 preprocessing to a raw holistic pose.
+
+    Mirrors `load_and_augment` outside training: preprocess, take xyz, append
+    fps-normalised velocity. Returns (pose_data, frame_times_seconds).
+    """
+    from sign_language_segmentation.utils.pose import compute_velocity, preprocess_pose
+
+    pose = preprocess_pose(pose)
+    pose_data = pose.body.data.filled(0)[:, 0, :, :3].astype(np.float32)
+    frame_times = np.arange(len(pose_data), dtype=np.float32) / fps
+    return np.concatenate([pose_data, compute_velocity(pose_data, frame_times)], axis=-1), frame_times
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__,
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--split", default="test", choices=["train", "validation", "test"])
+    parser.add_argument("--model", default=None,
+                        help="path to a model dir, .safetensors or .ckpt "
+                             "(default: the weights shipped in dist/2026)")
+    parser.add_argument("--fps", type=int, default=dgs_data.AVAILABLE_FPS)
+    parser.add_argument("--device", default="cpu")
+    parser.add_argument("--tfds-root", default=dgs_data.TFDS_ROOT)
+    parser.add_argument("--backup", default=dgs_data.BACKUP)
+    parser.add_argument("--out", type=Path, default=None)
+    args = parser.parse_args()
+
+    import torch
+    from sign_language_segmentation.bin import _load_model_uncached, resolve_model_path
+    from sign_language_segmentation.metrics import (bio_labels_to_segments,
+                                                    likeliest_probs_to_segments)
+    from sign_language_segmentation.utils.bio import create_bio_from_times
+
+    model_path = args.model or resolve_model_path()
+    model = _load_model_uncached(model_dir=model_path, device=args.device)
+    num_frames = getattr(model.hparams, "num_frames", None)
+
+    out_path = args.out or (Path(__file__).parent / "predictions" /
+                            f"dgs_{args.split}_2026.json")
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    print(f"model        {model_path}")
+    print(f"chunk size   {num_frames} frames")
+    print(f"decoding     likeliest (argmax)")
+    print(f"fps          {args.fps}\n")
+
+    started = time.time()
+    clips = []
+
+    for clip in dgs_data.iter_clips(split=args.split, fps=args.fps,
+                                    tfds_root=args.tfds_root, backup=args.backup):
+        pose_data, frame_times = prepare(clip["pose"], clip["fps"])
+        total_frames = len(pose_data)
+        frame_times_ms = frame_times * 1000
+
+        with torch.no_grad():
+            log_probs = model(torch.from_numpy(pose_data).unsqueeze(0).to(args.device),
+                              timestamps=torch.from_numpy(frame_times).unsqueeze(0).to(args.device))
+
+        record = {"id": clip["id"], "num_frames": total_frames, "fps": args.fps,
+                  "gold": {}, "pred": {}, "gold_bio": {}, "pred_bio": {}}
+
+        for their_name, our_name in LEVELS.items():
+            spans_ms = [{"start": s["start_time"] * 1000, "end": s["end_time"] * 1000}
+                        for s in clip[our_name]]
+            gold_bio = create_bio_from_times(spans_ms, frame_times_ms)
+            probs = log_probs[their_name][0].cpu()
+
+            record["gold"][our_name] = bio_labels_to_segments(torch.from_numpy(gold_bio.astype(np.int64)))
+            record["pred"][our_name] = likeliest_probs_to_segments(probs)
+            record["gold_bio"][our_name] = rle([BIO_2026_TO_OURS.get(int(v), 0) for v in gold_bio])
+            record["pred_bio"][our_name] = rle(
+                [BIO_2026_TO_OURS.get(int(v), 0) for v in probs.numpy().argmax(axis=1)])
+
+        clips.append(record)
+        print(f"  {record['id']:<24} {total_frames:>7} frames  "
+              f"sign {len(record['pred']['sign']):>5}/{len(record['gold']['sign']):<5} "
+              f"phrase {len(record['pred']['phrase']):>4}/{len(record['gold']['phrase']):<4} "
+              f"({time.time() - started:.0f}s)", flush=True)
+
+    out_path.write_text(json.dumps({
+        "dataset": "public_dgs_corpus", "split": args.split,
+        "model": "2026", "checkpoint": str(model_path),
+        # argmax decoding has no thresholds; score.py renders the absence as "-"
+        "thresholds": {},
+        "fps": args.fps,
+        "pipeline": "sign_language_segmentation main (dist/2026)",
+        "clips": clips,
+    }, indent=2))
+
+    print(f"\n{len(clips)} clips in {time.time() - started:.0f}s")
+    print(f"wrote {out_path}")
+
+
+if __name__ == "__main__":
+    main()

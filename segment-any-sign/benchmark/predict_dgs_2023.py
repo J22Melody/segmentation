@@ -15,6 +15,10 @@ Verified against Moryossef & Jiang (2023) on the test split, E1s:
 
 and the split loads as 9 documents / 17 videos, matching the paper.
 
+Data loading is shared with every other model through
+`../datasets/public_dgs_corpus/load.py`, which
+also does the vendoring described below.
+
 What is vendored, from the git history, cached under `.cache/v2023_src/`:
 
   * `data.py`, `pose_utils.py`, `probs_to_segments.py` from tag **v2023**
@@ -41,35 +45,22 @@ from __future__ import annotations
 import argparse
 import json
 import math
-import os
-import subprocess
 import sys
 import time
-import types
 from pathlib import Path
 
 import numpy as np
 
-TFDS_ROOT = "/shares/iict-sp2.ebling.cl.uzh/common/tensorflow_datasets"
-BACKUP = "/shares/iict-sp2.ebling.cl.uzh/zifjia/backups/tensorflow_datasets_2/downloads"
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-CACHE = REPO_ROOT / ".cache"
-SRC = CACHE / "v2023_src"
+from datasets.public_dgs_corpus import load as dgs_data  # noqa: E402
 
-# file -> git ref it comes from
-VENDORED = {
-    "data.py": "v2023",
-    "pose_utils.py": "e3a020b",
-    "tfds_dataset.py": "e3a020b",
-    "utils/probs_to_segments.py": "v2023",
-    "utils/__init__.py": "v2023",
-}
+CACHE = dgs_data.CACHE
 
 # Components, fps and model settings from the 2023 job scripts (jobs/job_batch.sh):
 #   E1s: hidden_dim=256 encoder_depth=4 bidirectional
 #   E4s: E1s + --optical_flow=true --hand_normalization=true
-COMPONENTS = ["POSE_LANDMARKS", "LEFT_HAND_LANDMARKS", "RIGHT_HAND_LANDMARKS"]
+COMPONENTS = dgs_data.COMPONENTS
 FPS = 25
 
 # Tuned decoding from the 2023 grid search (src/summary_decoding_E4s.csv,
@@ -81,48 +72,6 @@ DEFAULT_SIGN = (60.0, 50.0)
 DEFAULT_PHRASE = (80.0, 80.0)
 
 LEVELS = {"sign": "sign", "sentence": "phrase"}  # their name -> ours
-
-
-def git_show(ref: str, path: str) -> bytes:
-    try:
-        return subprocess.check_output(["git", "-C", str(REPO_ROOT), "show", f"{ref}:{path}"])
-    except subprocess.CalledProcessError as error:
-        raise SystemExit(
-            f"cannot read {path} from {ref}. Fetch the tag with\n"
-            f"  git fetch https://github.com/sign-language-processing/segmentation "
-            f"'+refs/tags/v2023:refs/tags/v2023'") from error
-
-
-def vendor_v2023() -> None:
-    """Materialise the original source under .cache/, patching only imports."""
-    if (SRC / "data.py").exists():
-        return
-    (SRC / "utils").mkdir(parents=True, exist_ok=True)
-    for name, ref in VENDORED.items():
-        text = git_show(ref, f"sign_language_segmentation/src/{name}").decode()
-        text = text.replace("from _shared.tfds_dataset import", "from tfds_dataset import")
-        text = text.replace("from .pose_utils import", "from pose_utils import")
-        (SRC / name).write_text(text)
-    (SRC / "__init__.py").touch()
-    print(f"vendored the v2023 pipeline into {SRC}")
-
-
-def stub_mediapipe() -> None:
-    """tfds_dataset imports mediapipe only for reduce_face, which we never use."""
-    holistic = types.ModuleType("mediapipe.solutions.holistic")
-    holistic.FACEMESH_CONTOURS = []
-    solutions = types.ModuleType("mediapipe.solutions")
-    solutions.holistic = holistic
-    mediapipe = types.ModuleType("mediapipe")
-    mediapipe.solutions = solutions
-    sys.modules.setdefault("mediapipe", mediapipe)
-    sys.modules.setdefault("mediapipe.solutions", solutions)
-    sys.modules.setdefault("mediapipe.solutions.holistic", holistic)
-
-
-def local(path: str, backup: str) -> str:
-    """Re-resolve an absolute /shares/volk.cl.uzh path into our backup."""
-    return os.path.join(backup, os.path.basename(path))
 
 
 def rle(values) -> list[list[int]]:
@@ -166,35 +115,15 @@ def main() -> None:
     parser.add_argument("--sign-o", type=float, default=DEFAULT_SIGN[1])
     parser.add_argument("--phrase-b", type=float, default=DEFAULT_PHRASE[0])
     parser.add_argument("--phrase-o", type=float, default=DEFAULT_PHRASE[1])
-    parser.add_argument("--tfds-root", default=TFDS_ROOT)
-    parser.add_argument("--backup", default=BACKUP)
+    parser.add_argument("--tfds-root", default=dgs_data.TFDS_ROOT)
+    parser.add_argument("--backup", default=dgs_data.BACKUP)
     parser.add_argument("--out", type=Path, default=None)
     args = parser.parse_args()
 
-    vendor_v2023()
-    stub_mediapipe()
-    sys.path.insert(0, str(SRC))
+    v2023 = dgs_data.vendored(args.backup)
 
     import torch
-    import data as v2023  # noqa: E402  (the original pipeline)
     from utils.probs_to_segments import probs_to_segments  # noqa: E402
-
-    # redirect annotation lookups into the backup
-    original_get_elan = v2023.get_elan_sentences
-    v2023.get_elan_sentences = lambda path: original_get_elan(local(path, args.backup))
-
-    excluded = ["1289910", "1245887", "1289868", "1246064", "1584617"]
-
-    def filter_dataset(tf_datum):
-        """v2023 filter_dataset, with the CMDI path re-resolved."""
-        if "paths" not in tf_datum:
-            return True
-        if tf_datum["id"].numpy().decode("utf-8") in excluded:
-            return False
-        with open(local(tf_datum["paths"]["cmdi"].numpy().decode("utf-8"), args.backup)) as f:
-            return "<cmdp:Task>Joke</cmdp:Task>" not in f.read()
-
-    v2023.filter_dataset = filter_dataset
 
     is_e4 = "E4" in args.model  # E4 variants add optical flow + 3D hand normalisation
     tag = args.model.replace("model_", "").replace(".pth", "")
