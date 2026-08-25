@@ -17,7 +17,7 @@ which has seen several follow-ups:
 - [SAGE](https://openaccess.thecvf.com/content/ICCV2025W/MSLR/papers/Low_SAGE_Segment-Aware_Gloss-Free_Encoding_for_Token-Efficient_Sign_Language_Translation_ICCVW_2025_paper.pdf) — segment-informed tokens for efficient translation; up to 50% shorter inputs, 2.67x lower memory.
 - [Subtitle–signing alignment](https://arxiv.org/abs/2512.08094) — segmentation as an alignment signal.
 - [Extracting signs from weakly aligned corpora](https://www.sign-lang.uni-hamburg.de/lrec/pub/26039.html) — a study on LSF and LSM (sign-lang@LREC 2026).
-- [MHB](https://arxiv.org/abs/2511.19907) — handshape-aware boundary detection for ASL, evaluated on the ASLLRP corpus.
+- [MHB](https://lrec.elra.info/lrec2026-ws-signlang-52) — handshape-aware boundary detection for ASL, evaluated on the ASLLRP corpus (sign-lang@LREC 2026).
 
 Our interest is how well these trained models generalize:
 

@@ -53,24 +53,31 @@ def segments_to_bio(segments: Sequence[Segment], num_frames: int) -> np.ndarray:
 
 
 def frame_f1(pred_bio: np.ndarray, gold_bio: np.ndarray,
-             labels: Iterable[int] = BIO_LABELS) -> float:
+             labels: Iterable[int] | None = BIO_LABELS) -> float:
     """Macro-averaged per-class F1 over frame-level BIO labels.
 
     The paper's primary metric, chosen because it is independent of the segment
-    decoding algorithm. Averaged over the full label set (O, B, I) rather than
-    only the classes present, so the value stays comparable across clips.
+    decoding algorithm.
+
+    `labels` defaults to the full set (O, B, I), so the value stays comparable
+    across clips of different composition. Pass ``labels=None`` for sklearn's
+    default — averaging only over classes actually present — which is what the
+    2023 evaluation did: a clip with no annotation, predicted empty, scores 1.0
+    there instead of 0.33. That choice moves the corpus mean by ~0.12 on the DGS
+    test split, so it matters; see benchmark/.
     """
     pred_bio, gold_bio = np.asarray(pred_bio), np.asarray(gold_bio)
     if pred_bio.shape != gold_bio.shape:
         raise ValueError(f"shape mismatch: {pred_bio.shape} vs {gold_bio.shape}")
     if pred_bio.size == 0:
         return 1.0
-    return float(f1_score(gold_bio, pred_bio, labels=list(labels),
+    return float(f1_score(gold_bio, pred_bio,
+                          labels=None if labels is None else list(labels),
                           average="macro", zero_division=0))
 
 
 def frame_f1_micro(pred_bio: np.ndarray, gold_bio: np.ndarray,
-                   labels: Iterable[int] = BIO_LABELS) -> float:
+                   labels: Iterable[int] | None = BIO_LABELS) -> float:
     """Micro-averaged F1 over frame-level BIO labels.
 
     Pools true/false positives across the three classes instead of averaging
@@ -84,7 +91,8 @@ def frame_f1_micro(pred_bio: np.ndarray, gold_bio: np.ndarray,
         raise ValueError(f"shape mismatch: {pred_bio.shape} vs {gold_bio.shape}")
     if pred_bio.size == 0:
         return 1.0
-    return float(f1_score(gold_bio, pred_bio, labels=list(labels),
+    return float(f1_score(gold_bio, pred_bio,
+                          labels=None if labels is None else list(labels),
                           average="micro", zero_division=0))
 
 

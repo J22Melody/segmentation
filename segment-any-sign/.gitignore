@@ -1,5 +1,9 @@
 # Rendered reports (reports/*.html) are tracked; everything else generated is not.
 
+# benchmark predictions: a few MB each and regenerated in under a minute by
+# benchmark/predict_*.py. The committed record is the table in benchmark/README.md.
+benchmark/predictions/*.json
+
 # derived data / scratch outputs
 stats.json
 *.csv
