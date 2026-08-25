@@ -98,20 +98,40 @@ def score_file(path: Path) -> dict:
 
 
 def format_table(rows: list[dict]) -> str:
-    header = (f"{'model':<16} {'dataset':<20} {'split':<6} {'clips':>5} │ "
-              + " ".join(f"{c:>9}" for c in COLUMNS))
-    lines = []
-    for level in LEVELS:
-        present = [r for r in rows if r["levels"].get(level)]
-        if not present:
-            continue
-        lines += ["", f"{level.upper()} level", "─" * len(header), header, "─" * len(header)]
-        for row in present:
-            values = row["levels"][level]
-            lines.append(
-                f"{row['model']:<16} {row['dataset']:<20} {row['split']:<6} "
-                f"{row['clips']:>5} │ "
-                + " ".join(f"{values[c]:>9.4f}" for c in COLUMNS))
+    """One row per model, with Sign and Phrase as column groups.
+
+    Laid out like Table 2 of the 2023 paper, which groups the levels side by
+    side rather than stacking them, so two models are compared at a glance.
+    Decoding thresholds are shown per level, since they differ (the tuned phrase
+    setting is 90/90 for E1s but 80/80 for E4s) and the scores move with them.
+    """
+    metrics = ("frame_f1", "frame_f1_micro", "iou", "percentage", "mf1s")
+    short = {"frame_f1": "F1", "frame_f1_micro": "acc", "iou": "IoU",
+             "percentage": "%", "mf1s": "mF1S"}
+
+    group = f"{'b/o':>7} " + " ".join(f"{short[m]:>6}" for m in metrics)
+    width = len(group)
+    head1 = f"{'model':<14} {'dataset':<18} {'split':<5} {'clips':>5} │ " \
+            f"{'Sign'.center(width)} │ {'Phrase'.center(width)}"
+    head2 = f"{'':<14} {'':<18} {'':<5} {'':>5} │ {group} │ {group}"
+    rule = "─" * len(head1)
+
+    lines = [rule, head1, head2, rule]
+    for row in rows:
+        cells = []
+        for level in LEVELS:
+            values = row["levels"].get(level)
+            pair = row["thresholds"].get(level)
+            if values is None:
+                # the dataset does not annotate this level: blank, not zero
+                cells.append(f"{'—':>7} " + " ".join(f"{'—':>6}" for _ in metrics))
+                continue
+            label = f"{pair[0]:g}/{pair[1]:g}" if pair else "-"
+            cells.append(f"{label:>7} " + " ".join(f"{values[m]:>6.3f}" for m in metrics))
+        lines.append(
+            f"{row['model']:<14} {row['dataset']:<18} {row['split']:<5} "
+            f"{row['clips']:>5} │ {cells[0]} │ {cells[1]}")
+    lines.append(rule)
     return "\n".join(lines)
 
 
@@ -126,12 +146,6 @@ def main() -> None:
 
     rows = [score_file(path) for path in args.predictions]
     print(format_table(rows))
-
-    for row, path in zip(rows, args.predictions):
-        thresholds = row["thresholds"]
-        if thresholds:
-            print(f"\n{row['model']}: sign b/o {thresholds['sign']}, "
-                  f"phrase b/o {thresholds['phrase']}")
 
     if args.per_clip:
         for path in args.predictions:

@@ -25,19 +25,27 @@ plus run-length-encoded frame labels, a few hundred KB per run.
 
 ## Results
 
-Public DGS Corpus, test split (9 documents / 17 videos). Laid out like Table 2 of
-the 2023 paper — sign and phrase kept separate — with `mF1S` added. `%` is
-optimal at 1.
+Public DGS Corpus, test split (9 documents / 17 videos). Laid out like the 2023
+paper: sign and phrase side by side as column groups rather than stacked. `b/o`
+are the decoding thresholds the row was produced with, `acc` is frame accuracy,
+and `%` is optimal at 1.
 
-| Model | Sign F1 | Sign IoU | Sign % | Sign mF1S | Phrase F1 | Phrase IoU | Phrase % | Phrase mF1S |
-|---|---|---|---|---|---|---|---|---|
-| 2023 E1s | 0.638 | 0.688 | 1.026 | 0.441 | 0.662 | 0.847 | 0.971 | 0.361 |
-| 2023 E4s | 0.592 | 0.628 | 1.061 | 0.429 | 0.626 | 0.790 | 1.060 | 0.376 |
+| | | Sign | | | | | | Phrase | | | | | |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **Model** | **clips** | **b/o** | **F1** | **acc** | **IoU** | **%** | **mF1S** | **b/o** | **F1** | **acc** | **IoU** | **%** | **mF1S** |
+| 2023 E1s | 17 | 60/50 | 0.638 | 0.754 | 0.688 | 1.026 | 0.441 | 90/90 | 0.662 | 0.880 | 0.847 | 0.971 | 0.361 |
+| 2023 E4s | 17 | 60/50 | 0.592 | 0.749 | 0.628 | 1.061 | 0.429 | 80/80 | 0.626 | 0.883 | 0.790 | 1.060 | 0.376 |
 
-Frame accuracy (micro F1) is computed too, and reported by `score.py`: sign
-0.754 / 0.749 and phrase 0.880 / 0.883 for E1s / E4s.
+Regenerate with:
 
-E1s uses phrase thresholds 90/90, E4s 80/80 — see *Decoding thresholds* below.
+```bash
+conda activate sas && python benchmark/score.py benchmark/predictions/*.json
+```
+
+**Thresholds.** E1s uses the phrase pair 90/90 and E4s 80/80, because those are
+what the 2023 grid search selected for each; the sign pair 60/50 is shared. The
+scores move with these, so they are printed in the table rather than assumed —
+see *Decoding thresholds* below.
 
 ### Reproduction of Moryossef & Jiang (2023)
 
