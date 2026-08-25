@@ -31,10 +31,15 @@ Two conventions are translated on the way out:
   * Gold frames. Upstream derives gold segments from the BIO labels, which is
     kept here — it is that model's protocol. The 2023 row floors both bounds
     instead. See `README.md`; the two differ by at most a frame.
+  * Gold phrases. Upstream takes a phrase to be the annotated sentence, v2023
+    takes it to be the extent of that sentence's glosses. This model is scored
+    against the former, which is what it was trained to predict.
 
-**fps.** The published 2026 numbers are at 50fps. The only DGS config built on
-this cluster is `holistic-25`, so this runs at 25fps and the row is the model's
-25fps operating point, not the headline. See `README.md`.
+**Source.** Defaults to `--source native`: the archived `.pose` downloads at their
+original **50fps**, which is both what this model publishes numbers at and the
+format its own loader reads. `--source tfds` serves the same clips from the TFDS
+build instead, but that build baked in a 25fps downsample, so it costs the model
+real accuracy. The clip list and gold annotations are identical either way.
 
     conda activate sas
     python benchmark/predict_dgs_2026.py --split test
@@ -93,7 +98,11 @@ def main() -> None:
     parser.add_argument("--model", default=None,
                         help="path to a model dir, .safetensors or .ckpt "
                              "(default: the weights shipped in dist/2026)")
-    parser.add_argument("--fps", type=int, default=dgs_data.AVAILABLE_FPS)
+    parser.add_argument("--source", default="native", choices=["native", "tfds"],
+                        help="native = archived 50fps .pose files (default); "
+                             "tfds = the 25fps TFDS build")
+    parser.add_argument("--fps", type=int, default=dgs_data.AVAILABLE_FPS,
+                        help="only used by --source tfds")
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--tfds-root", default=dgs_data.TFDS_ROOT)
     parser.add_argument("--backup", default=dgs_data.BACKUP)
@@ -114,16 +123,22 @@ def main() -> None:
                             f"dgs_{args.split}_2026.json")
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
+    native = args.source == "native"
     print(f"model        {model_path}")
     print(f"chunk size   {num_frames} frames")
     print(f"decoding     likeliest (argmax)")
-    print(f"fps          {args.fps}\n")
+    print(f"source       {args.source} "
+          f"({'50fps originals' if native else f'{args.fps}fps TFDS build'})\n")
 
     started = time.time()
     clips = []
 
-    for clip in dgs_data.iter_clips(split=args.split, fps=args.fps,
-                                    tfds_root=args.tfds_root, backup=args.backup):
+    clip_source = (dgs_data.iter_clips_native(split=args.split, backup=args.backup)
+                   if native else
+                   dgs_data.iter_clips(split=args.split, fps=args.fps,
+                                       tfds_root=args.tfds_root, backup=args.backup))
+
+    for clip in clip_source:
         pose_data, frame_times = prepare(clip["pose"], clip["fps"])
         total_frames = len(pose_data)
         frame_times_ms = frame_times * 1000
@@ -132,12 +147,16 @@ def main() -> None:
             log_probs = model(torch.from_numpy(pose_data).unsqueeze(0).to(args.device),
                               timestamps=torch.from_numpy(frame_times).unsqueeze(0).to(args.device))
 
-        record = {"id": clip["id"], "num_frames": total_frames, "fps": args.fps,
+        record = {"id": clip["id"], "num_frames": total_frames, "fps": clip["fps"],
                   "gold": {}, "pred": {}, "gold_bio": {}, "pred_bio": {}}
+
+        # phrase = the sentence's own annotated bounds, which is what this model
+        # was trained on; the gloss extent v2023 uses would misscore it badly
+        spans = dgs_data.sign_phrase_spans(clip["sentences"], phrase="sentence")
 
         for their_name, our_name in LEVELS.items():
             spans_ms = [{"start": s["start_time"] * 1000, "end": s["end_time"] * 1000}
-                        for s in clip[our_name]]
+                        for s in spans[our_name]]
             gold_bio = create_bio_from_times(spans_ms, frame_times_ms)
             probs = log_probs[their_name][0].cpu()
 
@@ -158,7 +177,7 @@ def main() -> None:
         "model": "2026", "checkpoint": str(model_path),
         # argmax decoding has no thresholds; score.py renders the absence as "-"
         "thresholds": {},
-        "fps": args.fps,
+        "source": args.source,
         "pipeline": "sign_language_segmentation main (dist/2026)",
         "clips": clips,
     }, indent=2))

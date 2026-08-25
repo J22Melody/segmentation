@@ -10,6 +10,11 @@ differ in how they preprocess a pose before it enters the network — that part
 lives in [`../benchmark/`](../benchmark/) — but never in which clips they see or
 what they are scored against.
 
+Two pose sources, same clips and annotations either way: `iter_clips` reads the
+TFDS build at 25fps, `iter_clips_native` reads the archived `.pose` downloads at
+their original 50fps. A model gets whichever it was developed against — for the
+2026 model that choice is worth 0.06 IoU.
+
 The benchmark needs **per-sign boundaries** — that is the dividing line below.
 
 | dataset | language | sign-level | scale | state |

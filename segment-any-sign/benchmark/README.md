@@ -33,6 +33,12 @@ so the table compares models rather than pipelines. What each model does to a po
 preprocessing for another's costs real points (see below). Each `predict_*.py`
 owns that step.
 
+The loader offers two routes to the same clips. `iter_clips` reads the TFDS build
+(25fps, what the 2023 model was developed against); `iter_clips_native` reads the
+archived `.pose` originals at 50fps, which is the format *and* rate the 2026 model
+expects. Same documents, same joke and exclusion filters, same annotations — only
+the pose source differs, and each model gets the one it was built for.
+
 Predictions land in `benchmark/predictions/*.json` — gold and predicted segments
 plus run-length-encoded frame labels, a few hundred KB per run.
 
@@ -65,7 +71,7 @@ micro-averaged (see [`../metrics/`](../metrics/)); `IoU` is pooled frame overlap
 | *— our benchmark results below —* | | | | | | | | | | | |
 | 2023 E1s (60/50, 90/90) | ours | 0.638 | 0.754 | 0.688 | 1.026 | 0.441 | 0.662 | 0.880 | 0.847 | 0.971 | 0.361 |
 | 2023 E4s (60/50, 80/80) | ours | 0.592 | 0.749 | 0.628 | 1.061 | 0.429 | 0.626 | 0.883 | 0.790 | 1.060 | 0.376 |
-| 2026, 25fps (argmax) | ours | 0.589 | 0.823 | 0.619 | 0.884 | 0.424 | 0.568 | 0.881 | 0.770 | 0.539 | 0.080 |
+| 2026 (argmax, 50fps) | ours | 0.613 | 0.835 | 0.679 | 0.951 | 0.436 | 0.665 | 0.963 | 0.936 | 0.537 | 0.101 |
 
 Regenerate our rows with:
 
@@ -82,21 +88,31 @@ Our two rows use the tuned thresholds, making **E1s\*/E4s\* the like-for-like
 comparison** — and they match. No published work reports `F1-mi` or `mF1S` on
 this dataset, so those columns are ours alone.
 
-**The 2026 model is not yet reproduced, and its row is at the wrong fps.** Its
-published numbers are 50fps; the only DGS config built on this cluster is
-`holistic-25`, so our row is the model's **25fps operating point**. Sign IoU
-0.619 against a published 0.652 is roughly what the fps gap predicts, but phrase
-is not: 0.770 against 0.925, with `%` at 0.539 — it emits **half** the phrase
-segments it should, merging adjacent sentences into long runs, which is also why
-its phrase mF1S (0.080) is far below the 2023 model's. Treat this row as a first
-working run, not a verified reproduction. Two things to rule out, in order:
+**The 2026 model reproduces**, slightly ahead of its published IoUs on both
+levels: sign 0.679 against 0.652, phrase 0.936 against 0.925. Getting there took
+three corrections, and each is worth knowing because the same traps apply to the
+next model:
 
-1. **fps.** Building a `holistic-50` config settles it. The download cache
-   (714 `.pose` files, 192 GB) looks complete, so no network is needed, but the
-   build would add ~144 GB and run for hours — worth confirming before starting.
-2. **Phrase decoding.** Argmax is what the 2026 README prescribes, and it reports
-   phrase IoU 0.925 with it, so a plain merge at 25fps is the likelier story —
-   but this is the next thing to check if fps does not explain it.
+1. **It does not use TFDS.** Its loader reads raw `.pose` files and `.eaf`
+   directly. Serving it from the TFDS build was off-contract from the start.
+2. **fps.** The TFDS build baked in a 25fps downsample; the model publishes at
+   50. The untouched 50fps originals were already in the download archive, keyed
+   by `original_fname` in each `.INFO` sidecar, so no rebuild was needed — worth
+   checking before anyone spends ~144 GB and several hours rebuilding a config.
+   Going 25 -> 50fps was worth +0.06 sign IoU.
+3. **What a phrase is.** v2023 takes a phrase to be the extent of a sentence's
+   glosses; the 2026 loader takes the German translation tier's own bounds, which
+   are wider and more contiguous. Scoring this model against the gloss extent made
+   its predictions look like they merged phrases and cost it 0.11 phrase IoU
+   (0.770 -> 0.878 on the fix alone). `sign_phrase_spans` now carries both.
+
+**Where our metrics disagree with theirs.** Phrase `%` is 0.537: the model covers
+almost exactly the right frames (IoU 0.936) using **half** the segments it should,
+merging adjacent sentences. IoU cannot see this, which is precisely why `%` and
+`mF1S` are in the table — phrase mF1S of 0.101 sits far below the 2023 model's
+0.376 despite a much better IoU. Neither `%` nor `mF1S` is published for this
+model, so this is not a discrepancy with their numbers; it is a property of the
+model their metrics do not surface.
 
 **Hands-On (n/r).** [Low et al. (2025)](https://arxiv.org/abs/2504.08593),
 Table II, is the only follow-up we found that evaluates on the Public DGS Corpus;

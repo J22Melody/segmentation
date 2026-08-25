@@ -43,10 +43,11 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 CACHE = REPO_ROOT / ".cache"
 SRC = CACHE / "v2023_src"
 
-# The only DGS config built on this cluster is `holistic-25`, so 25 is the only
-# fps we can actually serve. The 2026 model's published numbers are at 50fps;
-# see ../../benchmark/README.md for what that costs and what a 50fps build takes.
+# The TFDS build on this cluster is `holistic-25`, so that route serves 25fps
+# only. `iter_clips_native` reads the archived .pose downloads instead, which are
+# the untouched 50fps originals TFDS was built from — no rebuild required.
 AVAILABLE_FPS = 25
+NATIVE_FPS = 50
 
 COMPONENTS = ["POSE_LANDMARKS", "LEFT_HAND_LANDMARKS", "RIGHT_HAND_LANDMARKS"]
 
@@ -148,13 +149,14 @@ def iter_clips(split: str = "test", fps: int = AVAILABLE_FPS,
     """Yield one dict per signer-video, with the pose unprocessed.
 
     Keys: `id` (`<document>_<person>`), `pose` (a `pose_format.Pose` holding only
-    the body and hand components), `fps`, and `sign` / `phrase` gold spans as
-    `{"start_time", "end_time"}` in **seconds**.
+    the body and hand components), `fps`, and `sentences`.
 
-    Sign spans are the glosses; a phrase span runs from the first gloss of a
-    sentence to its last, which is how v2023 `build_classes_vectors` derives them.
-    Sentences with no glosses are dropped upstream, so both levels come from the
-    same annotations.
+    Each sentence carries its **own** `start_time` / `end_time` — the German
+    translation tier's timeslots — alongside its `glosses`, all in seconds. Both
+    are kept because the two models disagree about what a phrase is, and the
+    disagreement is not cosmetic: see `sign_phrase_spans`.
+
+    Sentences with no glosses are dropped, matching both models' loaders.
     """
     v2023 = vendored(backup)
 
@@ -165,11 +167,151 @@ def iter_clips(split: str = "test", fps: int = AVAILABLE_FPS,
         components=COMPONENTS, data_dir=tfds_root, filter_func=v2023.filter_dataset)
 
     for datum in data:
-        for item in v2023.process_datum_dgs_corpus(datum):
-            # item["segments"] is a list of sentences, each a list of gloss spans
-            signs = [gloss for sentence in item["segments"] for gloss in sentence]
-            phrases = [{"start_time": sentence[0]["start_time"],
-                        "end_time": sentence[-1]["end_time"]}
-                       for sentence in item["segments"] if sentence]
-            yield {"id": item["id"], "pose": item["pose"], "fps": fps,
-                   "sign": signs, "phrase": phrases}
+        poses = datum["pose"]
+        elan_path = datum["tf_datum"]["paths"]["eaf"].numpy().decode("utf-8")
+        sentences = list(v2023.get_elan_sentences(elan_path))
+
+        for person in ("a", "b"):
+            if len(poses[person].body.data) == 0:
+                continue
+            person_sentences = [
+                {"start_time": s["start"] / 1000, "end_time": s["end"] / 1000,
+                 "glosses": [{"start_time": g["start"] / 1000, "end_time": g["end"] / 1000}
+                             for g in s["glosses"]]}
+                for s in sentences
+                if s["participant"].lower() == person and len(s["glosses"]) > 0
+            ]
+            yield {"id": f"{datum['id']}_{person}", "pose": poses[person],
+                   "fps": fps, "sentences": person_sentences}
+
+
+def sign_phrase_spans(sentences, phrase: str = "sentence") -> dict:
+    """Derive sign and phrase gold spans from the shared sentence records.
+
+    Sign spans are the glosses either way — the models agree there. Phrase spans
+    do not agree, and the choice matters a great deal:
+
+      * `phrase="sentence"` uses the sentence's own annotated bounds. This is what
+        the 2026 loader does, and what its model was trained to predict.
+      * `phrase="glosses"` runs from a sentence's first gloss to its last, which
+        is how v2023 `build_classes_vectors` derives it.
+
+    The gloss extent sits *inside* the annotated sentence, so the two differ by
+    the lead-in and trail-out around the signing. Scoring the 2026 model against
+    the gloss extent makes its near-contiguous sentence predictions look like they
+    merge phrases, and costs it most of its phrase score.
+    """
+    if phrase not in ("sentence", "glosses"):
+        raise ValueError(f"phrase must be 'sentence' or 'glosses', got {phrase!r}")
+
+    signs = [gloss for sentence in sentences for gloss in sentence["glosses"]]
+    if phrase == "sentence":
+        phrases = [{"start_time": s["start_time"], "end_time": s["end_time"]}
+                   for s in sentences]
+    else:
+        phrases = [{"start_time": s["glosses"][0]["start_time"],
+                    "end_time": s["glosses"][-1]["end_time"]}
+                   for s in sentences if s["glosses"]]
+    return {"sign": signs, "phrase": phrases}
+
+
+# -- native source: the archived .pose downloads ------------------------------
+#
+# The TFDS build downsampled poses to 25fps when it was made, and that is baked
+# into the records. The 2026 model publishes 50fps numbers and reads raw .pose
+# files directly, so serving it from TFDS would silently halve its input rate.
+#
+# The originals are still in the download archive, keyed by `original_fname` in
+# each `.INFO` sidecar (`<document>_<person>.pose`, `<document>-*.eaf`, `.cmdi`).
+# That is enough to rebuild the whole clip list without TFDS at all.
+
+
+def _archive_index(backup: str = BACKUP) -> dict:
+    """Map file kind -> key -> local path, read from the .INFO sidecars.
+
+    Poses are keyed `<document>_<person>`; eaf and cmdi by document id, whose
+    filenames carry extra session numbers after the id.
+    """
+    import glob
+    import json
+
+    index = {"pose": {}, "eaf": {}, "cmdi": {}}
+    for info_path in glob.glob(os.path.join(backup, "*.INFO")):
+        try:
+            with open(info_path) as f:
+                name = json.load(f).get("original_fname", "")
+        except (OSError, ValueError):
+            continue
+        local_path = info_path[: -len(".INFO")]
+        if not os.path.exists(local_path):
+            continue
+        stem, _, kind = name.rpartition(".")
+        if kind == "pose":
+            index["pose"][stem] = local_path
+        elif kind in ("eaf", "cmdi"):
+            index[kind][stem.split("-")[0]] = local_path
+    return index
+
+
+def _splits(splits_path: str | None = None) -> dict:
+    """Read the 2026 split file, which extends split.3.0.0-uzh-document.
+
+    Same dev/test document ids the 2023 TFDS split uses, so both routes select
+    the same clips.
+    """
+    import json
+
+    if splits_path is None:
+        import sign_language_segmentation
+        splits_path = (Path(sign_language_segmentation.__file__).parent /
+                       "datasets" / "dgs" / "splits.json")
+    return json.loads(Path(splits_path).read_text())
+
+
+def iter_clips_native(split: str = "test", backup: str = BACKUP,
+                      splits_path: str | None = None):
+    """Yield clips from the archived .pose downloads, at their native 50fps.
+
+    Same shape as `iter_clips`, and the same filters — the five excluded
+    documents and anything tagged as a joke — so the clip list matches. The
+    difference is the pose: untouched originals rather than the TFDS build's
+    25fps downsample.
+    """
+    from pose_format import Pose
+
+    from sign_language_segmentation.datasets.dgs.utils import get_elan_sentences
+
+    index = _archive_index(backup)
+    splits = _splits(splits_path)
+    wanted = set(splits["dev" if split in ("dev", "validation") else split]) \
+        if split in ("dev", "validation", "test") else None
+
+    for doc_id in sorted(index["eaf"]):
+        if doc_id in EXCLUDED_IDS:
+            continue
+        if wanted is not None and doc_id not in wanted:
+            continue
+        cmdi_path = index["cmdi"].get(doc_id)
+        if cmdi_path is None:
+            continue
+        with open(cmdi_path) as f:
+            if "<cmdp:Task>Joke</cmdp:Task>" in f.read():
+                continue
+
+        sentences = list(get_elan_sentences(index["eaf"][doc_id]))
+
+        for person in ("a", "b"):
+            pose_path = index["pose"].get(f"{doc_id}_{person}")
+            if pose_path is None:
+                continue
+            person_sentences = [
+                {"start_time": s["start"] / 1000, "end_time": s["end"] / 1000,
+                 "glosses": [{"start_time": g["start"] / 1000, "end_time": g["end"] / 1000}
+                             for g in s["glosses"]]}
+                for s in sentences
+                if s["participant"].lower() == person and len(s["glosses"]) > 0
+            ]
+            with open(pose_path, "rb") as f:
+                pose = Pose.read(f)
+            yield {"id": f"{doc_id}_{person}", "pose": pose,
+                   "fps": float(pose.body.fps), "sentences": person_sentences}
