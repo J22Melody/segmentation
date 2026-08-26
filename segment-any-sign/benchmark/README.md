@@ -44,9 +44,17 @@ plus run-length-encoded frame labels, a few hundred KB per run.
 
 ## Results
 
-Public DGS Corpus, test split (9 documents / 17 videos). Laid out like Table 2 of
-the 2023 paper: sign and phrase side by side as column groups rather than
-stacked.
+Public DGS Corpus, test split — 9 documents, **14 annotated videos** of 17. Laid
+out like Table 2 of the 2023 paper: sign and phrase side by side as column groups
+rather than stacked.
+
+**Our numbers are not directly comparable to the 2023 paper's**, and deliberately
+so. That paper scored all 17 videos, three of which carry no annotation at all
+(see below); they are free ~1.0s that lift every model's mean. We drop them by
+default. This puts our 2023 rows *below* the published ones — E1s sign IoU 0.621
+here against 0.69 published — which is the honest direction: the published figures
+are the inflated ones. From here on every model is scored on the same filtered,
+fully-annotated set. `--all-clips` reproduces the old protocol exactly.
 
 Rows above the *our benchmark results below* divider are transcribed from
 published papers; rows under it are our own runs. Published rows are copied
@@ -69,9 +77,9 @@ micro-averaged (see [`../metrics/`](../metrics/)); `IoU` is pooled frame overlap
 | Hands-On 2025 (n/r) | paper, Tab. II | 0.86 | — | 0.76 | 0.98 | — | — | — | — | — | — |
 | 2026 E169, 50fps | README | — | — | 0.652 | — | — | — | — | 0.925 | — | — |
 | *— our benchmark results below —* | | | | | | | | | | | |
-| 2023 E1s (60/50, 90/90) | ours | 0.638 | 0.754 | 0.688 | 1.026 | 0.441 | 0.662 | 0.880 | 0.847 | 0.971 | 0.361 |
-| 2023 E4s (60/50, 80/80) | ours | 0.592 | 0.749 | 0.628 | 1.061 | 0.429 | 0.626 | 0.883 | 0.790 | 1.060 | 0.376 |
-| 2026 (argmax, 50fps) | ours | 0.613 | 0.835 | 0.679 | 0.951 | 0.436 | 0.665 | 0.963 | 0.936 | 0.537 | 0.101 |
+| 2023 E1s (60/50, 90/90) | ours | 0.560 | 0.701 | 0.621 | 1.031 | 0.441 | 0.589 | 0.854 | 0.814 | 0.964 | 0.361 |
+| 2023 E4s (60/50, 80/80) | ours | 0.553 | 0.695 | 0.620 | 1.074 | 0.429 | 0.593 | 0.858 | 0.817 | 1.073 | 0.376 |
+| 2026 (argmax, 50fps) | ours | 0.530 | 0.800 | 0.611 | 0.941 | 0.436 | 0.593 | 0.955 | 0.922 | 0.437 | 0.101 |
 
 Regenerate our rows with:
 
@@ -79,7 +87,7 @@ Regenerate our rows with:
 conda activate sas && python benchmark/score.py benchmark/predictions/*.json
 ```
 
-Add `--annotated-only` to drop the three clips that have no gold — see
+Add `--all-clips` for the 17-video protocol the 2023 paper used — see
 comparability, below.
 
 Published rows are maintained by hand — `score.py` prints only what we ran.
@@ -91,9 +99,9 @@ Our two rows use the tuned thresholds, making **E1s\*/E4s\* the like-for-like
 comparison** — and they match. No published work reports `F1-mi` or `mF1S` on
 this dataset, so those columns are ours alone.
 
-**The 2026 model reproduces.** On its own clip set (see comparability, below)
-phrase IoU lands within 0.003 of published; on ours both IoUs sit slightly ahead
-of it, sign 0.679 against 0.652 and phrase 0.936 against 0.925. Getting there took
+**The 2026 model reproduces.** Its phrase IoU of 0.922 lands within 0.003 of the
+published 0.925 on the same clip set upstream uses — which is the set the table
+now uses. Sign is 0.611 against 0.652. Getting there took
 three corrections, and each is worth knowing because the same traps apply to the
 next model:
 
@@ -115,18 +123,18 @@ against their `evaluate.py` line by line: macro frame F1 with no label set (so
 present classes only, as in `score.py`), `segment_IoU` identical to our
 `global_iou`, argmax decoding, gold segments from BIO labels, mean over clips.
 
-**The clip set differs, though.** Their `DGSSegmentationDataset` drops a
+**The clip set now matches theirs.** Their `DGSSegmentationDataset` drops a
 signer-video whose sentences carry no glosses (`if not person_sentences:
-continue`), so upstream evaluates **14 clips**; we keep all **17**, as the 2023
-protocol does. Both numbers, same predictions:
+continue`), evaluating 14 clips; we do the same by default. Both views, same
+predictions:
 
-| | | our 17 | upstream's 14 | published |
+| | | 14 (default) | 17 (`--all-clips`) | published |
 |---|---|---|---|---|
-| Sign | IoU | 0.679 | 0.611 | 0.652 |
-| Phrase | IoU | 0.936 | 0.922 | **0.925** |
+| Sign | IoU | 0.611 | 0.679 | 0.652 |
+| Phrase | IoU | **0.922** | 0.936 | **0.925** |
 
-On their clip set phrase lands within 0.003 of published — effectively exact.
-Sign sits 0.04 low, and the likeliest remaining difference is pose provenance:
+Phrase lands within 0.003 of published — effectively exact. Sign sits 0.04 low,
+and the likeliest remaining difference is pose provenance:
 they read a `poses_dir` of MediaPipe Holistic poses, while we read the archived
 `.pose` downloads. Same corpus, but not demonstrably the same extraction, and
 sign boundaries are the more extraction-sensitive of the two levels. Unconfirmed.
@@ -138,20 +146,18 @@ other has no gold at all. They are not empty video — a person is on camera —
 they are the listener, and every model here predicts almost nothing on them
 (2023 E1s 0 segments, 2023 E4s 1, 2026 0). With no gold and no prediction, each
 scores ~1.0 on every metric, so **keeping them lifts every model's mean**: sign
-IoU 0.679 at 17 clips against 0.611 at 14.
+IoU 0.679 across 17 against 0.611 across 14.
 
-That inflation applies equally to the 2023 published numbers, which were computed
-on all 17. The table keeps 17 for every model, since the 2023 rows are only
-reproducible that way and one clip set has to be chosen — but the 14-clip figures
-are the harder and more informative ones, and
+They are dropped by default. They test something real — a model must stay silent
+on a non-signing participant — but all three models already do, so they add a free
+~1.0 per clip rather than any discrimination between models. The 2023 paper
+included them, so its published numbers carry that inflation; ours no longer do.
 
 ```bash
-python benchmark/score.py benchmark/predictions/*.json --annotated-only
+python benchmark/score.py benchmark/predictions/*.json --all-clips
 ```
 
-prints them for any model. Worth remembering that these clips test something real
-(a model must stay silent on a non-signing participant) while being trivially
-easy for all three models so far.
+restores the old protocol, and is what the reproduction below is checked against.
 
 ### A note on `%`, and what IoU hides
 
@@ -160,12 +166,12 @@ mean of sign and phrase IoU); `%` and `mF1S` appear nowhere in it. That shows:
 
 | | Sign | Phrase |
 |---|---|---|
-| IoU | 0.679 | 0.936 |
-| `%` | 0.951 | **0.537** |
+| IoU | 0.611 | 0.922 |
+| `%` | 0.941 | **0.437** |
 | mF1S | 0.436 | **0.101** |
 
 Phrase IoU is excellent and phrase `%` is terrible at the same time. The model
-covers very nearly the right frames while emitting **little over half** the
+covers very nearly the right frames while emitting **under half** the
 segments it should — it merges adjacent sentences into long runs. IoU is a pooled
 frame-overlap measure and is blind to this by construction; a single prediction
 spanning two gold phrases scores just as well as two correct ones. `mF1S` at 0.101

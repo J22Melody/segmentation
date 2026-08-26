@@ -10,6 +10,9 @@ TensorFlow.
     conda activate sas
     python benchmark/score.py benchmark/predictions/*.json
     python benchmark/score.py benchmark/predictions/*.json --per-clip
+
+By default only clips carrying gold annotation are scored. Pass `--all-clips` for
+the looser 17-clip set the 2023 paper used.
 """
 
 from __future__ import annotations
@@ -71,15 +74,17 @@ def score_clip(clip: dict, level: str) -> dict:
     return result
 
 
-def score_file(path: Path, annotated_only: bool = False) -> dict:
+def score_file(path: Path, annotated_only: bool = True) -> dict:
     """Score one prediction file, per level.
 
-    `annotated_only` drops clips with no gold at that level. Three of the 17 DGS
-    test clips are the unannotated partner in a two-signer conversation; they
-    score ~1.0 on every metric and lift each model's mean. The 2023 protocol
-    keeps them (and its published numbers are only reproducible that way), while
-    the 2026 upstream eval drops them at the dataset level. Default is to keep
-    them, so all models are compared on one clip set.
+    `annotated_only` (the default) drops clips with no gold at that level. Three
+    of the 17 DGS test clips are the unannotated partner in a two-signer
+    conversation: no gold, and every model correctly predicts nothing, so each
+    scores ~1.0 on every metric and lifts the mean without testing anything.
+
+    Dropping them is what the 2026 upstream eval does at the dataset level. The
+    2023 evaluation kept them, so reproducing that paper needs
+    `annotated_only=False` — see README.md.
     """
     payload = json.loads(path.read_text())
     clips = payload["clips"]
@@ -164,13 +169,14 @@ def main() -> None:
     parser.add_argument("predictions", nargs="+", type=Path)
     parser.add_argument("--per-clip", action="store_true",
                         help="also print each clip, worst mF1S first")
-    parser.add_argument("--annotated-only", action="store_true",
-                        help="score only clips with gold at that level, as the "
-                             "2026 upstream eval does (14 of the 17 DGS test clips)")
+    parser.add_argument("--all-clips", action="store_true",
+                        help="also score clips with no gold at that level. Needed "
+                             "to reproduce the 2023 paper, which included them; "
+                             "the default drops them (14 of 17 DGS test clips)")
     parser.add_argument("--out", type=Path, default=None, help="write results as JSON")
     args = parser.parse_args()
 
-    rows = [score_file(path, annotated_only=args.annotated_only)
+    rows = [score_file(path, annotated_only=not args.all_clips)
             for path in args.predictions]
     print(format_table(rows))
 
