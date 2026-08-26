@@ -165,18 +165,4 @@ model:
 **IoU alone can mislead.** This model selects on IoU and reports nothing else. At
 phrase level it reaches 0.922 IoU with `%` at 0.437 — nearly the right frames from
 **under half** the segments, merging adjacent sentences. IoU cannot see this: one
-prediction spanning two gold phrases scores as well as two correct ones. Worth
-keeping in mind when reading any IoU-only result.
-
-## Scope
-
-- **Models:** 2023 (E1s / E4s) and 2026, with room for more.
-- **Datasets:** whatever [`../datasets/`](../datasets/) has gold segments for.
-- **Levels:** sign and phrase separate; an unannotated level renders blank, not
-  zero.
-
-Preprocessing differs genuinely: 2023 wants 3 components at 25fps, legs zeroed by
-its vendored `pose_utils`, optionally optical flow and hand normalisation; 2026
-wants `reduce_holistic` to 50 joints, mean/std normalisation from
-`pose-anonymization`, velocity for 6 dims per joint. No shared "standard" pipeline
-exists, and inventing one would break both.
+prediction spanning two gold phrases scores as well as two correct ones. Worth further manual investigation.
