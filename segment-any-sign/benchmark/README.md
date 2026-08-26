@@ -162,20 +162,11 @@ model:
    config at ~144 GB and hours. Worth +0.06 sign IoU.
 3. **Phrase definition**, above.
 
-## Finding: IoU hides over-merging
-
-The 2026 work selects on IoU (harmonic mean of sign and phrase); `%` and `mF1S`
-appear nowhere in it. On its own phrase target it scores IoU 0.922 while `%` is
-0.437 — covering nearly the right frames with **under half** the segments, merging
-adjacent sentences into long runs. IoU is blind to this by construction: one
-prediction spanning two gold phrases scores as well as two correct ones. `mF1S`
-0.071 against the 2023 model's 0.376 is the same fact from the segment side.
-
-Not a discrepancy with their numbers — a property their metrics cannot surface,
-and the argument for reporting all four. Open: whether the merging is a decoding
-artefact (argmax cannot force a boundary where the B posterior is weak but
-non-zero) or learned, and whether a B-aware decode recovers `%` without giving up
-IoU.
+**IoU alone can mislead.** This model selects on IoU and reports nothing else. At
+phrase level it reaches 0.922 IoU with `%` at 0.437 — nearly the right frames from
+**under half** the segments, merging adjacent sentences. IoU cannot see this: one
+prediction spanning two gold phrases scores as well as two correct ones. Worth
+keeping in mind when reading any IoU-only result.
 
 ## Scope
 
