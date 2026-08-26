@@ -88,8 +88,9 @@ Our two rows use the tuned thresholds, making **E1s\*/E4s\* the like-for-like
 comparison** — and they match. No published work reports `F1-mi` or `mF1S` on
 this dataset, so those columns are ours alone.
 
-**The 2026 model reproduces**, slightly ahead of its published IoUs on both
-levels: sign 0.679 against 0.652, phrase 0.936 against 0.925. Getting there took
+**The 2026 model reproduces.** On its own clip set (see comparability, below)
+phrase IoU lands within 0.003 of published; on ours both IoUs sit slightly ahead
+of it, sign 0.679 against 0.652 and phrase 0.936 against 0.925. Getting there took
 three corrections, and each is worth knowing because the same traps apply to the
 next model:
 
@@ -106,13 +107,54 @@ next model:
    its predictions look like they merged phrases and cost it 0.11 phrase IoU
    (0.770 -> 0.878 on the fix alone). `sign_phrase_spans` now carries both.
 
-**Where our metrics disagree with theirs.** Phrase `%` is 0.537: the model covers
-almost exactly the right frames (IoU 0.936) using **half** the segments it should,
-merging adjacent sentences. IoU cannot see this, which is precisely why `%` and
-`mF1S` are in the table — phrase mF1S of 0.101 sits far below the 2023 model's
-0.376 despite a much better IoU. Neither `%` nor `mF1S` is published for this
-model, so this is not a discrepancy with their numbers; it is a property of the
-model their metrics do not surface.
+**Is our 2026 row comparable to theirs?** Metric definitions, yes — checked
+against their `evaluate.py` line by line: macro frame F1 with no label set (so
+present classes only, as in `score.py`), `segment_IoU` identical to our
+`global_iou`, argmax decoding, gold segments from BIO labels, mean over clips.
+
+**The clip set differs, though.** Their `DGSSegmentationDataset` drops a
+signer-video whose sentences carry no glosses (`if not person_sentences:
+continue`), so upstream evaluates **14 clips**; we keep all **17**, as the 2023
+protocol does. Both numbers, same predictions:
+
+| | | our 17 | upstream's 14 | published |
+|---|---|---|---|---|
+| Sign | IoU | 0.679 | 0.611 | 0.652 |
+| Phrase | IoU | 0.936 | 0.922 | **0.925** |
+
+On their clip set phrase lands within 0.003 of published — effectively exact.
+Sign sits 0.04 low, and the likeliest remaining difference is pose provenance:
+they read a `poses_dir` of MediaPipe Holistic poses, while we read the archived
+`.pose` downloads. Same corpus, but not demonstrably the same extraction, and
+sign boundaries are the more extraction-sensitive of the two levels. Unconfirmed.
+
+**The table keeps all 17 clips for every model**, because dropping a video for
+having no annotation discards exactly the no-signer case the project set out to
+measure, and because the 2023 rows are only reproducible at 17.
+
+### A note on `%`, and what IoU hides
+
+The 2026 work tunes and reports **IoU** (its selection metric is the harmonic
+mean of sign and phrase IoU); `%` and `mF1S` appear nowhere in it. That shows:
+
+| | Sign | Phrase |
+|---|---|---|
+| IoU | 0.679 | 0.936 |
+| `%` | 0.951 | **0.537** |
+| mF1S | 0.436 | **0.101** |
+
+Phrase IoU is excellent and phrase `%` is terrible at the same time. The model
+covers very nearly the right frames while emitting **little over half** the
+segments it should — it merges adjacent sentences into long runs. IoU is a pooled
+frame-overlap measure and is blind to this by construction; a single prediction
+spanning two gold phrases scores just as well as two correct ones. `mF1S` at 0.101
+against the 2023 model's 0.376 is the same fact seen from the segment side.
+
+This is not a discrepancy with their published numbers — it is a property their
+metrics cannot surface, and an argument for reporting all four. Worth
+investigating: whether the merging is a decoding artefact (argmax gives no way to
+force a boundary where the B posterior is weak but non-zero) or is learned, and
+whether a B-aware decode recovers `%` without giving up IoU.
 
 **Hands-On (n/r).** [Low et al. (2025)](https://arxiv.org/abs/2504.08593),
 Table II, is the only follow-up we found that evaluates on the Public DGS Corpus;
