@@ -31,9 +31,12 @@ Two conventions are translated on the way out:
   * Gold frames. Upstream derives gold segments from the BIO labels, which is
     kept here — it is that model's protocol. The 2023 row floors both bounds
     instead. See `README.md`; the two differ by at most a frame.
-  * Gold phrases. Upstream takes a phrase to be the annotated sentence, v2023
-    takes it to be the extent of that sentence's glosses. This model is scored
-    against the former, which is what it was trained to predict.
+  * Gold phrases. Upstream takes a phrase to be the annotated sentence; v2023
+    takes it to be the extent of that sentence's glosses. **We score against the
+    gloss extent** (`--phrase glosses`, the default) so the benchmark's phrase
+    column means one thing across every row. That is not this model's own target,
+    and it costs it — see README.md. `--phrase sentence` scores it on its own
+    terms instead.
 
 **Source.** Defaults to `--source native`: the archived `.pose` downloads at their
 original **50fps**, which is both what this model publishes numbers at and the
@@ -103,6 +106,11 @@ def main() -> None:
                              "tfds = the 25fps TFDS build")
     parser.add_argument("--fps", type=int, default=dgs_data.AVAILABLE_FPS,
                         help="only used by --source tfds")
+    parser.add_argument("--phrase", default="glosses", choices=["glosses", "sentence"],
+                        help="what counts as a phrase: 'glosses' = the extent of a "
+                             "sentence's glosses (the 2023 definition, used for the "
+                             "benchmark so the column is consistent); 'sentence' = "
+                             "the annotated sentence bounds, this model's own target")
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--tfds-root", default=dgs_data.TFDS_ROOT)
     parser.add_argument("--backup", default=dgs_data.BACKUP)
@@ -128,7 +136,8 @@ def main() -> None:
     print(f"chunk size   {num_frames} frames")
     print(f"decoding     likeliest (argmax)")
     print(f"source       {args.source} "
-          f"({'50fps originals' if native else f'{args.fps}fps TFDS build'})\n")
+          f"({'50fps originals' if native else f'{args.fps}fps TFDS build'})")
+    print(f"phrase gold  {args.phrase}\n")
 
     started = time.time()
     clips = []
@@ -150,9 +159,7 @@ def main() -> None:
         record = {"id": clip["id"], "num_frames": total_frames, "fps": clip["fps"],
                   "gold": {}, "pred": {}, "gold_bio": {}, "pred_bio": {}}
 
-        # phrase = the sentence's own annotated bounds, which is what this model
-        # was trained on; the gloss extent v2023 uses would misscore it badly
-        spans = dgs_data.sign_phrase_spans(clip["sentences"], phrase="sentence")
+        spans = dgs_data.sign_phrase_spans(clip["sentences"], phrase=args.phrase)
 
         for their_name, our_name in LEVELS.items():
             spans_ms = [{"start": s["start_time"] * 1000, "end": s["end_time"] * 1000}
@@ -178,6 +185,7 @@ def main() -> None:
         # argmax decoding has no thresholds; score.py renders the absence as "-"
         "thresholds": {},
         "source": args.source,
+        "phrase_gold": args.phrase,
         "pipeline": "sign_language_segmentation main (dist/2026)",
         "clips": clips,
     }, indent=2))
