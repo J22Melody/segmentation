@@ -71,21 +71,29 @@ def score_clip(clip: dict, level: str) -> dict:
     return result
 
 
-def score_file(path: Path) -> dict:
-    """Score one prediction file, per level."""
+def score_file(path: Path, annotated_only: bool = False) -> dict:
+    """Score one prediction file, per level.
+
+    `annotated_only` drops clips with no gold at that level. Three of the 17 DGS
+    test clips are the unannotated partner in a two-signer conversation; they
+    score ~1.0 on every metric and lift each model's mean. The 2023 protocol
+    keeps them (and its published numbers are only reproducible that way), while
+    the 2026 upstream eval drops them at the dataset level. Default is to keep
+    them, so all models are compared on one clip set.
+    """
     payload = json.loads(path.read_text())
     clips = payload["clips"]
 
     results = {}
     for level in LEVELS:
-        # A level is scored when the dataset annotates it at all. Individual
-        # clips with no annotation are still scored — the 2023 evaluation kept
-        # them, and dropping them shifts the corpus mean. A level no clip
-        # annotates stays out of the table entirely, blank rather than zero.
+        scored = [clip for clip in clips
+                  if clip["gold"].get(level) or not annotated_only]
+        # A level no clip annotates stays out of the table entirely, blank
+        # rather than zero.
         if not any(clip["gold"].get(level) for clip in clips):
             results[level] = None
             continue
-        results[level] = aggregate([score_clip(clip, level) for clip in clips])
+        results[level] = aggregate([score_clip(clip, level) for clip in scored])
 
     return {
         "model": payload.get("model", path.stem),
@@ -93,6 +101,7 @@ def score_file(path: Path) -> dict:
         "split": payload.get("split", "?"),
         "thresholds": payload.get("thresholds", {}),
         "clips": len(clips),
+        "annotated_only": annotated_only,
         "levels": results,
     }
 
@@ -155,10 +164,14 @@ def main() -> None:
     parser.add_argument("predictions", nargs="+", type=Path)
     parser.add_argument("--per-clip", action="store_true",
                         help="also print each clip, worst mF1S first")
+    parser.add_argument("--annotated-only", action="store_true",
+                        help="score only clips with gold at that level, as the "
+                             "2026 upstream eval does (14 of the 17 DGS test clips)")
     parser.add_argument("--out", type=Path, default=None, help="write results as JSON")
     args = parser.parse_args()
 
-    rows = [score_file(path) for path in args.predictions]
+    rows = [score_file(path, annotated_only=args.annotated_only)
+            for path in args.predictions]
     print(format_table(rows))
 
     if args.per_clip:

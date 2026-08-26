@@ -79,6 +79,9 @@ Regenerate our rows with:
 conda activate sas && python benchmark/score.py benchmark/predictions/*.json
 ```
 
+Add `--annotated-only` to drop the three clips that have no gold — see
+comparability, below.
+
 Published rows are maintained by hand — `score.py` prints only what we ran.
 
 **Reading the published rows.** `*` marks the 2023 paper's tuned decoding, which
@@ -128,9 +131,27 @@ they read a `poses_dir` of MediaPipe Holistic poses, while we read the archived
 `.pose` downloads. Same corpus, but not demonstrably the same extraction, and
 sign boundaries are the more extraction-sensitive of the two levels. Unconfirmed.
 
-**The table keeps all 17 clips for every model**, because dropping a video for
-having no annotation discards exactly the no-signer case the project set out to
-measure, and because the 2023 rows are only reproducible at 17.
+**What the three extra clips are.** `1180022_b`, `1187154_a` and `1419122_a` are
+the *unannotated partner* in a two-signer conversation: those documents carry
+`Deutsche_Übersetzung` and `Lexem_Gebärde` tiers for one participant only, so the
+other has no gold at all. They are not empty video — a person is on camera — but
+they are the listener, and every model here predicts almost nothing on them
+(2023 E1s 0 segments, 2023 E4s 1, 2026 0). With no gold and no prediction, each
+scores ~1.0 on every metric, so **keeping them lifts every model's mean**: sign
+IoU 0.679 at 17 clips against 0.611 at 14.
+
+That inflation applies equally to the 2023 published numbers, which were computed
+on all 17. The table keeps 17 for every model, since the 2023 rows are only
+reproducible that way and one clip set has to be chosen — but the 14-clip figures
+are the harder and more informative ones, and
+
+```bash
+python benchmark/score.py benchmark/predictions/*.json --annotated-only
+```
+
+prints them for any model. Worth remembering that these clips test something real
+(a model must stay silent on a non-signing participant) while being trivially
+easy for all three models so far.
 
 ### A note on `%`, and what IoU hides
 
