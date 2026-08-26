@@ -1,5 +1,7 @@
 """Run the 2026 segmentation model over a Public DGS Corpus split.
 
+Model: https://github.com/sign-language-processing/segmentation/blob/main/dist/2026/README.md
+
 Stage 1 of 2, writing the same prediction JSON `score.py` already reads, so the
 2026 model lands in the same table as the 2023 one with no new scoring code.
 

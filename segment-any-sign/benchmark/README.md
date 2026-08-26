@@ -10,14 +10,8 @@ future `experiments/`.
 (2023). Deviate only for an explicit bug, and record why.**
 
 Same rule [`../metrics/`](../metrics/) follows for metric definitions. It fixes
-the clip list, split, filters, gold, and frame conversion; a newer model is
-measured against those whether or not it was built for them. The cost is intended
-— the 2026 model gives up 0.13 phrase IoU this way — and buys a column that means
-one thing all the way down.
-
-A model's **preprocessing is not part of the protocol**: that is the model, not
-the measurement. Forcing one model's onto another cost the 2023 model ~0.07 frame
-F1.
+the clip list, split, filters, gold, and frame conversion; a newer model is measured against those whether or not it was built for them.
+A model's **preprocessing is not part of the protocol**: that is the model, not the measurement.
 
 | deviation taken | why it is a bug, not a preference |
 |---|---|
@@ -61,7 +55,7 @@ thresholds as `(sign b/o, phrase b/o)`.
 | M&J 2023 E1s\* (60/50, 90/90) | paper, Tab. 2 | — | — | 0.69 | 1.03 | — | — | — | 0.85 | 1.02 | — |
 | M&J 2023 E4s\* (60/50, 80/80) | paper, Tab. 2 | — | — | 0.63 | 1.06 | — | — | — | 0.79 | 1.12 | — |
 | Hands-On 2025 (n/r) | paper, Tab. II | 0.86 | — | 0.76 | 0.98 | — | — | — | — | — | — |
-| 2026 E169, 50fps | README | — | — | 0.652 | — | — | — | — | 0.925 | — | — |
+| 2026 E169, 50fps | [dist/2026](https://github.com/sign-language-processing/segmentation/blob/main/dist/2026/README.md) | — | — | 0.652 | — | — | — | — | 0.925 | — | — |
 | *— our benchmark results below —* | | | | | | | | | | | |
 | 2023 E1s (60/50, 90/90) | ours | 0.560 | 0.701 | 0.621 | 1.031 | 0.441 | 0.589 | 0.854 | 0.814 | 0.964 | 0.361 |
 | 2023 E4s (60/50, 80/80) | ours | 0.553 | 0.695 | 0.620 | 1.074 | 0.429 | 0.593 | 0.858 | 0.817 | 1.073 | 0.376 |
@@ -75,10 +69,7 @@ are the flattered ones.
 `*` marks the 2023 paper's tuned decoding, which moves only IoU and `%` — hence
 `—` for the decoding-independent F1. `F1-mi` and `mF1S` are unpublished by anyone.
 
-**Hands-On** is the only follow-up on this corpus (others use BOBSL, YouTube-ASL,
-BSL Corpus, ASLLRP, LSF, LSM). Indicative only: sign level, no thresholds stated,
-split described just as the MeineDGS protocol.
-See [`../literature/2025-hands-on/`](../literature/2025-hands-on/).
+**Hands-On** is the only follow-up on this corpus. See [`../literature/2025-hands-on/`](../literature/2025-hands-on/).
 
 ## Protocol
 
@@ -90,8 +81,7 @@ nothing. With no gold and no prediction each scores ~1.0 throughout: sign IoU
 0.679 across 17 against 0.611 across 14. `score.py --all-clips` restores the
 17-video set. Upstream's 2026 eval independently drops the same three.
 
-**What counts as a phrase.** The two codebases disagree, and neither definition is
-ours:
+**What counts as a phrase.** The two codebases disagree:
 
 | | phrase = | source |
 |---|---|---|
@@ -107,20 +97,14 @@ trail-out. Phrase IoU against both, same predictions:
 | 2023 E4s | 0.817 | 0.849 |
 | 2026 | 0.792 | 0.922 |
 
-Every row uses the **2023 gloss extent**. Letting each model use its own
-definition would measure the 2026 row against a target 0.13 IoU easier than the
-2023 rows face. `predict_dgs_2026.py --phrase sentence` scores it on its own
-terms. A differing definition is a design choice, not a bug — but standardising on
-sentence bounds would raise every model rather than lower one, and they are the
-human annotation rather than a derived quantity, so it is worth revisiting
-deliberately.
+We use the **2023 gloss extent** for every row in our benchmark table above.
 
 **Decoding thresholds.** 2023 defaults are its grid-search values
 (`v2023 src/summary_decoding_E4s.csv`, 82 configs, selected on dev): **sign b=60
 o=50**, **phrase b=80 o=80**. IoU saturates across many configs, so `%` separates
 them. The shipped v2023 CLI hardcodes phrase 90/90 regardless of checkpoint — that
 is the *E1s* tuning; pass `--phrase-b 90 --phrase-o 90` for E1s. The 2026 model
-uses argmax and has no thresholds; its README rejects threshold decoding.
+uses argmax and has no thresholds; [its README](https://github.com/sign-language-processing/segmentation/blob/main/dist/2026/README.md) rejects threshold decoding.
 
 ## Reproductions
 
@@ -136,12 +120,9 @@ uses argmax and has no thresholds; its README rejects threshold decoding.
 | E4s | phrase | 0.6258 | 0.62 | 0.7902 | 0.79 |
 
 IoU is compared against the tuned-decoding rows (E1s\*/E4s\*), which is what we
-run; frame F1 is decoding-independent. `%` is not compared — the paper's come from
-`likeliest` decoding, ours from thresholds.
+run; frame F1 is decoding-independent.
 
-`predict_dgs_2023.py` **drives the original v2023 code**. A from-scratch version
-reproduced the segment metrics but sat ~0.07 low on the frame metrics, for reasons
-invisible from the paper:
+`predict_dgs_2023.py` **drives the original v2023 code**. A few noted details:
 
 - `tfds_dataset.py` imports **its own `pose_utils`**, not pose-format's — its
   `pose_hide_legs` zeroes eight leg points *and* their confidences. The
@@ -158,6 +139,9 @@ invisible from the paper:
   10 documents to 9.
 
 ### The 2026 model
+
+[dist/2026](https://github.com/sign-language-processing/segmentation/blob/main/dist/2026/README.md) — CNN-UNet + RoPE transformer, trained on DGS Corpus
+3.0.0-uzh-document, shipped as `dist/2026/model.safetensors`.
 
 Reproduces under *its* protocol: `--phrase sentence` gives phrase IoU 0.922
 against a published 0.925, same 14 clips. Sign is 0.611 against 0.652 either way
