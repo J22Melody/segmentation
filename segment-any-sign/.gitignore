@@ -23,3 +23,8 @@ experiments/**/logs/
 *.ckpt
 wandb/
 lightning_logs/
+
+# Run artefacts. Both are symlinks to /scratch/zifjia/segment-any-sign/ —
+# checkpoints and wandb logs must not sit on /home, which is small.
+dist
+wandb

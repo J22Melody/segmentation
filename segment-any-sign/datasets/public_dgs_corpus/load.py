@@ -54,6 +54,14 @@ COMPONENTS = ["POSE_LANDMARKS", "LEFT_HAND_LANDMARKS", "RIGHT_HAND_LANDMARKS"]
 # Documents excluded by v2023 `data.py`, unchanged by the 2026 code.
 EXCLUDED_IDS = ["1289910", "1245887", "1289868", "1246064", "1584617"]
 
+# Clips whose pose contradicts its annotation. `1177918_b` holds exactly half the
+# frames of `1177918_a` from the same recording (14,127 vs 28,254): it is
+# truncated at 283s while the annotation runs to 565s, so every span past the cut
+# would be clamped onto the final frame. Train split only — dev and test are
+# untouched, so no benchmark number moves. Dropped in memory; the file on the
+# share is left exactly as it is.
+DEFECTIVE_CLIPS = {"1177918_b"}
+
 # file -> git ref it comes from
 VENDORED = {
     "data.py": "v2023",
@@ -226,11 +234,25 @@ def sign_phrase_spans(sentences, phrase: str = "sentence") -> dict:
 # That is enough to rebuild the whole clip list without TFDS at all.
 
 
-def _archive_index(backup: str = BACKUP) -> dict:
-    """Map file kind -> key -> local path, read from the .INFO sidecars.
+def document_id(name: str) -> str:
+    """Normalise any corpus filename or split entry to its document id.
 
-    Poses are keyed `<document>_<person>`; eaf and cmdi by document id, whose
-    filenames carry extra session numbers after the id.
+    The archive is inconsistent: some files are named `1179224_a.pose`, others
+    `1429124-13403249-13545507_b.pose`, and `splits.json` mixes both forms.
+    Everything before the first hyphen is the document id, and matching on it is
+    what makes the three naming styles line up. Getting this wrong silently drops
+    documents rather than failing — 44 of them, before this existed.
+    """
+    return name.split("-")[0]
+
+
+def _archive_index(backup: str = BACKUP) -> dict:
+    """Map file kind -> session key -> local path, read from the .INFO sidecars.
+
+    Keys are the **session** stem (`1209309-13425110-13472919`), not the document
+    id, because six documents were recorded twice and each session has its own
+    eaf and its own poses. Keying on the document id alone silently overwrote 12
+    pose files. Poses add `_<person>`.
     """
     import glob
     import json
@@ -249,8 +271,19 @@ def _archive_index(backup: str = BACKUP) -> dict:
         if kind == "pose":
             index["pose"][stem] = local_path
         elif kind in ("eaf", "cmdi"):
-            index[kind][stem.split("-")[0]] = local_path
+            index[kind][stem] = local_path
     return index
+
+
+def _clip_id(session: str, person: str, sessions_per_doc: dict) -> str:
+    """`<document>_<person>`, keeping the session suffix only when it disambiguates.
+
+    Clip ids stay short and stable for the 394 single-session documents — which
+    is every dev and test clip, so benchmark ids are unaffected.
+    """
+    doc = document_id(session)
+    stem = doc if sessions_per_doc[doc] == 1 else session
+    return f"{stem}_{person}"
 
 
 def _splits(splits_path: str | None = None) -> dict:
@@ -268,40 +301,81 @@ def _splits(splits_path: str | None = None) -> dict:
     return json.loads(Path(splits_path).read_text())
 
 
-def iter_clips_native(split: str = "test", backup: str = BACKUP,
-                      splits_path: str | None = None):
-    """Yield clips from the archived .pose downloads, at their native 50fps.
+def _pose_meta(pose_path: str, cache: dict) -> tuple[float, int]:
+    """fps and frame count from a .pose header, without decoding the body."""
+    if pose_path in cache:
+        return cache[pose_path]["fps"], cache[pose_path]["total_frames"]
 
-    Same shape as `iter_clips`, and the same filters — the five excluded
-    documents and anything tagged as a joke — so the clip list matches. The
-    difference is the pose: untouched originals rather than the TFDS build's
-    25fps downsample.
-    """
     from pose_format import Pose
+    from pose_format.pose_body import EmptyPoseBody
+
+    with open(pose_path, "rb") as f:
+        pose = Pose.read(f, pose_body=EmptyPoseBody)
+    fps, total = float(pose.body.fps), len(pose.body.data)
+    cache[pose_path] = {"fps": fps, "total_frames": total}
+    return fps, total
+
+
+def clip_specs_native(split: str = "test", backup: str = BACKUP,
+                      splits_path: str | None = None):
+    """Yield clip *metadata* from the archive, without decoding any pose body.
+
+    This is the training-side entry point: a loader that reads windows out of
+    `pose_path` itself only needs `fps` and `total_frames` up front. Reading
+    every 50fps body just to count frames would cost minutes per epoch start.
+
+    Keys: `id`, `pose_path`, `fps`, `total_frames`, `sentences` (as in
+    `iter_clips`, seconds). Same filters and split file as `iter_clips_native`,
+    so train/dev/test here and the benchmark's clips are one and the same.
+    """
+    import json
 
     from sign_language_segmentation.datasets.dgs.utils import get_elan_sentences
 
     index = _archive_index(backup)
     splits = _splits(splits_path)
-    wanted = set(splits["dev" if split in ("dev", "validation") else split]) \
-        if split in ("dev", "validation", "test") else None
+    dev_ids = {document_id(i) for i in splits["dev"]}
+    test_ids = {document_id(i) for i in splits["test"]}
+    if split in ("dev", "validation"):
+        wanted, excluded = dev_ids, set()
+    elif split == "test":
+        wanted, excluded = test_ids, set()
+    elif split == "train":
+        # everything the split file does not name — matching how the 2026
+        # loader derives its train set
+        wanted, excluded = None, dev_ids | test_ids
+    else:
+        raise ValueError(f"unknown split {split!r}")
 
-    for doc_id in sorted(index["eaf"]):
-        if doc_id in EXCLUDED_IDS:
+    cache_path = CACHE / "dgs_pose_meta.json"
+    try:
+        cache = json.loads(cache_path.read_text())
+    except (OSError, ValueError):
+        cache = {}
+    cache_size = len(cache)
+
+    sessions_per_doc: dict = {}
+    for session in index["eaf"]:
+        doc = document_id(session)
+        sessions_per_doc[doc] = sessions_per_doc.get(doc, 0) + 1
+
+    for session in sorted(index["eaf"]):
+        doc_id = document_id(session)
+        if doc_id in EXCLUDED_IDS or doc_id in excluded:
             continue
         if wanted is not None and doc_id not in wanted:
             continue
-        cmdi_path = index["cmdi"].get(doc_id)
+        cmdi_path = index["cmdi"].get(session)
         if cmdi_path is None:
             continue
         with open(cmdi_path) as f:
             if "<cmdp:Task>Joke</cmdp:Task>" in f.read():
                 continue
 
-        sentences = list(get_elan_sentences(index["eaf"][doc_id]))
+        sentences = list(get_elan_sentences(index["eaf"][session]))
 
         for person in ("a", "b"):
-            pose_path = index["pose"].get(f"{doc_id}_{person}")
+            pose_path = index["pose"].get(f"{session}_{person}")
             if pose_path is None:
                 continue
             person_sentences = [
@@ -311,7 +385,32 @@ def iter_clips_native(split: str = "test", backup: str = BACKUP,
                 for s in sentences
                 if s["participant"].lower() == person and len(s["glosses"]) > 0
             ]
-            with open(pose_path, "rb") as f:
-                pose = Pose.read(f)
-            yield {"id": f"{doc_id}_{person}", "pose": pose,
-                   "fps": float(pose.body.fps), "sentences": person_sentences}
+            clip_id = _clip_id(session, person, sessions_per_doc)
+            if clip_id in DEFECTIVE_CLIPS:
+                continue
+            fps, total_frames = _pose_meta(pose_path, cache)
+            yield {"id": clip_id,
+                   "pose_path": pose_path,
+                   "fps": fps, "total_frames": total_frames,
+                   "sentences": person_sentences}
+
+    if len(cache) != cache_size:
+        CACHE.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text(json.dumps(cache))
+
+
+def iter_clips_native(split: str = "test", backup: str = BACKUP,
+                      splits_path: str | None = None):
+    """Yield clips from the archived .pose downloads, at their native 50fps.
+
+    Same shape as `iter_clips` — the pose is decoded here — and the same filters,
+    so the clip list matches. The difference is the pose itself: untouched
+    originals rather than the TFDS build's 25fps downsample.
+    """
+    from pose_format import Pose
+
+    for spec in clip_specs_native(split, backup, splits_path):
+        with open(spec["pose_path"], "rb") as f:
+            pose = Pose.read(f)
+        yield {"id": spec["id"], "pose": pose, "fps": spec["fps"],
+               "sentences": spec["sentences"]}

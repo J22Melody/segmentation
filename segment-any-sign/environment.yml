@@ -43,3 +43,5 @@ dependencies:
       - tensorflow-cpu
       - tensorflow-datasets
       - sign-language-datasets
+      # run logging for experiments/ (optuna is only needed for sweeps)
+      - wandb
