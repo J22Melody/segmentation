@@ -97,8 +97,7 @@ See [`benchmark/`](benchmark/) for how the two are used together.
 
 ## Write-up
 
-The paper lives in [`latex/`](latex/), a submodule of the Overleaf project — so
-Overleaf *is* the git remote, and edits flow both ways.
+The paper lives in [`latex/`](latex/), a submodule of the Overleaf project — so Overleaf *is* the git remote, and edits flow both ways.
 
 ```bash
 git submodule update --init                  # first clone (needs Overleaf access)
