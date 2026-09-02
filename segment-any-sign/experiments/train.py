@@ -51,6 +51,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -101,6 +102,12 @@ def main() -> None:
 
     import sign_language_segmentation.train as upstream_train
     from sign_language_segmentation.train import _dated_run_name, train
+
+    # Upstream names the run directory `<run_name>-<YYYY.MM.DD>`, so two runs on
+    # one day share it — and Lightning then writes best-v1.ckpt beside the first
+    # run's best.ckpt rather than overwriting. That silently mixes two models in
+    # one directory. Stamping the time makes every run its own directory.
+    args.run_name = f"{args.run_name or 'model'}-{datetime.now():%H%M%S}"
 
     # Upstream's train() instantiates whatever `PoseTaggingModel` names in its own
     # module namespace, so swapping the symbol there is enough to get the extra
@@ -172,17 +179,24 @@ def test_best_checkpoint(run_dir: Path, phrase: str) -> None:
     """
     import subprocess
 
-    checkpoint = run_dir / "best.ckpt"
-    if not checkpoint.exists():
-        print(f"no {checkpoint} — skipping test")
+    # Lightning appends -v1, -v2 rather than overwriting, so a second run with
+    # the same name and date leaves the *earlier* run's best.ckpt in place.
+    # Take the newest and say which, or a rerun silently evaluates the old model.
+    candidates = sorted(run_dir.glob("best*.ckpt"), key=lambda p: p.stat().st_mtime)
+    if not candidates:
+        print(f"no best*.ckpt in {run_dir} — skipping test")
         return
+    checkpoint = candidates[-1]
+    if len(candidates) > 1:
+        print(f"note: {len(candidates)} checkpoints here, testing the newest "
+              f"({checkpoint.name}); others: {[c.name for c in candidates[:-1]]}")
 
     here = Path(__file__).resolve().parent
     predictions = here.parent / "benchmark" / "predictions" / f"{run_dir.name}.json"
     steps = [
         [sys.executable, str(here.parent / "benchmark" / "predict_dgs_2026.py"),
          "--split", "test", "--model", str(checkpoint), "--phrase", phrase,
-         "--out", str(predictions)],
+         "--label", run_dir.name, "--out", str(predictions)],
         [sys.executable, str(here.parent / "benchmark" / "score.py"), str(predictions)],
     ]
 

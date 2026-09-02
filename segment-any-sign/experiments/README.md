@@ -78,7 +78,18 @@ directory.
 
 ## Ablations
 
-Filled in as runs land. Each row differs from the one above it by one component.
+Filled in as runs land. Test numbers, from `benchmark/score.py` on the same 14
+clips as every benchmark row. The shipped 2026 checkpoint is the reference, not a
+row we produced.
 
-| # | experiment | change | sign IoU | phrase IoU | notes |
-|---|---|---|---|---|---|
+| # | run | change | sign IoU | phrase IoU | phrase % | phrase mF1S |
+|---|---|---|---|---|---|---|
+| — | 2026 shipped | reference | 0.611 | 0.792 | 0.437 | 0.071 |
+| 00 | `baseline-2026` | from scratch, batch 32, mean-mF1S-selected | 0.597 | 0.824 | **0.751** | **0.201** |
+
+The same architecture trained on our clips for 100 epochs with no hyperparameter
+search already gives **much better phrase segmentation** than the shipped
+checkpoint (`%` 0.437 → 0.751, mF1S 0.071 → 0.201), at a small cost in sign IoU
+(0.611 → 0.597). Consistent with the shipped model having been selected on IoU
+alone, which cannot see merging — see
+[the benchmark README](../benchmark/README.md).

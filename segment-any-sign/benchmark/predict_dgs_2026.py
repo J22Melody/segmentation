@@ -116,6 +116,10 @@ def main() -> None:
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--tfds-root", default=dgs_data.TFDS_ROOT)
     parser.add_argument("--backup", default=dgs_data.BACKUP)
+    parser.add_argument("--label", default="2026",
+                        help="model name for the results table; set it when "
+                             "scoring a retrained checkpoint so the row is not "
+                             "confused with the shipped one")
     parser.add_argument("--out", type=Path, default=None)
     args = parser.parse_args()
 
@@ -183,7 +187,7 @@ def main() -> None:
 
     out_path.write_text(json.dumps({
         "dataset": "public_dgs_corpus", "split": args.split,
-        "model": "2026", "checkpoint": str(model_path),
+        "model": args.label, "checkpoint": str(model_path),
         # argmax decoding has no thresholds; score.py renders the absence as "-"
         "thresholds": {},
         "source": args.source,
