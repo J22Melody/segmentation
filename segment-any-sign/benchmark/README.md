@@ -1,21 +1,18 @@
 # Benchmark
 
-Inference-only evaluation: run existing models over the curated datasets, score
-with [`../metrics/`](../metrics/), produce the table. No training here — that is a
-future `experiments/`.
+Inference-only evaluation: run existing models over the curated datasets, score with [`../metrics/`](../metrics/), produce the table. No training here — that is a future `experiments/`.
 
 ## Rules
 
-**One evaluation protocol for every model, inherited from Moryossef & Jiang
-(2023). Deviate only for an explicit bug, and record why.**
+**One evaluation protocol for every model, inherited from Moryossef & Jiang (2023). Deviate only for an explicit bug, and record why.**
 
-Same rule [`../metrics/`](../metrics/) follows for metric definitions. It fixes
-the clip list, split, filters, gold, and frame conversion; a newer model is measured against those whether or not it was built for them.
-A model's **preprocessing is not part of the protocol**: that is the model, not the measurement.
+Same rule [`../metrics/`](../metrics/) follows for metric definitions. It fixes the clip list, split, filters, gold, and frame conversion; a newer model is measured against those whether or not it was built for them.
+
+A model's dedicated **preprocessing is not part of the protocol**: that is the model, not the measurement.
 
 | deviation taken | why it is a bug, not a preference |
 |---|---|
-| 3 of 17 test clips dropped | no annotation at all — a free ~1.0 on every metric, separating no models |
+| 3 of 17 test clips dropped | no annotation at all — a free ~1.0 on every metric |
 | upstream `segment_f1` dropped | computed `(p*r)/(p+r)`, half an F1; `mF1S` replaces it |
 
 ## Running it
@@ -29,23 +26,13 @@ python benchmark/predict_dgs_2026.py --split test
 python benchmark/score.py benchmark/predictions/*.json
 ```
 
-Clips, filters and gold come from
-[`../datasets/public_dgs_corpus/load.py`](../datasets/public_dgs_corpus/load.py)
-for every model: `iter_clips` reads the TFDS build at 25fps, `iter_clips_native`
-the archived `.pose` originals at 50fps. Each model gets the one it was developed
-against. Predictions land in `predictions/*.json` as segments plus RLE'd frame
-labels.
+Clips, filters and gold come from [`../datasets/public_dgs_corpus/load.py`](../datasets/public_dgs_corpus/load.py) for every model: `iter_clips` reads the TFDS build at 25fps, `iter_clips_native` the archived `.pose` originals at 50fps. Each model gets the one it was developed against. Predictions land in `predictions/*.json` as segments plus RLE'd frame labels.
 
 ## Results
 
-Public DGS Corpus test — 9 documents, **14 annotated videos** of 17. Sign and
-phrase as column groups, after Table 2 of the 2023 paper. Above the divider:
-transcribed from publications. Below: ours.
+Public DGS Corpus test — 9 documents, **14 annotated videos** of 17.
 
-`F1-ma`/`F1-mi` are frame-level F1 over O/B/I, macro/micro; `IoU` is pooled frame
-overlap; `%` is `#pred / #gold`, optimal at **1** either way; `mF1S` is
-matched-segment F1 ([`../metrics/`](../metrics/)). Models carry decoding
-thresholds as `(sign b/o, phrase b/o)`.
+`F1-ma`/`F1-mi` are frame-level F1 over O/B/I, macro/micro; `IoU` is pooled frame overlap; `%` is `#pred / #gold`, optimal at **1** either way; `mF1S` is matched-segment F1 ([`../metrics/`](../metrics/)). Models carry decoding thresholds as `(sign b/o, phrase b/o)`.
 
 | | | Sign | | | | | Phrase | | | | |
 |---|---|---|---|---|---|---|---|---|---|---|---|
@@ -60,11 +47,6 @@ thresholds as `(sign b/o, phrase b/o)`.
 | 2023 E1s (60/50, 90/90) | ours | 0.560 | 0.701 | 0.621 | 1.031 | 0.441 | 0.589 | 0.854 | 0.814 | 0.964 | 0.361 |
 | 2023 E4s (60/50, 80/80) | ours | 0.553 | 0.695 | 0.620 | 1.074 | 0.429 | 0.593 | 0.858 | 0.817 | 1.073 | 0.376 |
 | 2026 (argmax, 50fps) | ours | 0.530 | 0.800 | 0.611 | 0.941 | 0.436 | 0.513 | 0.861 | 0.792 | 0.437 | 0.071 |
-
-**Our rows are deliberately not comparable to the published ones**, both
-deviations pulling the same way: the 2023 rows lose the three free clips the paper
-counted, the 2026 row is scored on 2023's phrase definition. The published figures
-are the flattered ones.
 
 `*` marks the 2023 paper's tuned decoding, which moves only IoU and `%` — hence
 `—` for the decoding-independent F1. `F1-mi` and `mF1S` are unpublished by anyone.
@@ -99,13 +81,6 @@ trail-out. Phrase IoU against both, same predictions:
 
 We use the **2023 gloss extent** for every row in our benchmark table above.
 
-**Decoding thresholds.** 2023 defaults are its grid-search values
-(`v2023 src/summary_decoding_E4s.csv`, 82 configs, selected on dev): **sign b=60
-o=50**, **phrase b=80 o=80**. IoU saturates across many configs, so `%` separates
-them. The shipped v2023 CLI hardcodes phrase 90/90 regardless of checkpoint — that
-is the *E1s* tuning; pass `--phrase-b 90 --phrase-o 90` for E1s. The 2026 model
-uses argmax and has no thresholds; [its README](https://github.com/sign-language-processing/segmentation/blob/main/dist/2026/README.md) rejects threshold decoding.
-
 ## Reproductions
 
 ### Moryossef & Jiang (2023)
@@ -138,7 +113,7 @@ run; frame F1 is decoding-independent.
 - `<cmdp:Task>Joke</cmdp:Task>` documents are dropped, taking the test split from
   10 documents to 9.
 
-### The 2026 model
+### The 2026 model (unconfirmed)
 
 [dist/2026](https://github.com/sign-language-processing/segmentation/blob/main/dist/2026/README.md) — CNN-UNet + RoPE transformer, trained on DGS Corpus
 3.0.0-uzh-document, shipped as `dist/2026/model.safetensors`.
