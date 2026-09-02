@@ -93,7 +93,8 @@ conda env create -f environment-2023.yml
 conda activate sas2023
 ```
 
-See [`benchmark/`](benchmark/) for how the two are used together.
+See [`benchmark/`](benchmark/) for how the two are used together, and
+[`experiments/`](experiments/) for training runs.
 
 ## Write-up
 

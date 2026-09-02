@@ -16,3 +16,10 @@ stats.json
 # notebook and python cruft
 .ipynb_checkpoints/
 __pycache__/
+
+# training artefacts — checkpoints, logs and run state are regenerable
+experiments/**/checkpoints/
+experiments/**/logs/
+*.ckpt
+wandb/
+lightning_logs/
