@@ -1,30 +1,25 @@
 # Datasets
 
-One folder per corpus, each with an `explore.py` and a generated `explore.md`.
-Raw data stays on the shared filesystem, never in this repo.
+One folder per corpus, each with an `explore.py` and a generated `explore.md`. Raw data stays on the shared filesystem, never in this repo.
 
-A corpus used by the benchmark also gets a `load.py`: **one clip list, one set of
-gold annotations, shared by every model.** Only
-[`public_dgs_corpus/load.py`](public_dgs_corpus/load.py) exists so far. Models
-differ in how they preprocess a pose before it enters the network — that part
-lives in [`../benchmark/`](../benchmark/) — but never in which clips they see or
-what they are scored against.
+A corpus used by the benchmark also gets a `load.py`: **one clip list, one set of gold annotations, shared by every model.** Only [`public_dgs_corpus/load.py`](public_dgs_corpus/load.py) exists so far.
+Models differ in how they preprocess a pose before it enters the network — that part lives in [`../benchmark/`](../benchmark/) — but never in which clips they see or what they are scored against.
 
-Two pose sources, same clips and annotations either way: `iter_clips` reads the
-TFDS build at 25fps, `iter_clips_native` reads the archived `.pose` downloads at
-their original 50fps. A model gets whichever it was developed against — for the
-2026 model that choice is worth 0.06 IoU.
+The benchmark needs **per-sign boundaries** and **poses**. Only the Public DGS
+Corpus has both today; every other corpus is missing exactly one thing.
 
-The benchmark needs **per-sign boundaries** — that is the dividing line below.
-
-| dataset | language | sign-level | scale | state |
+| dataset | language | sign-level gold | poses | status |
 |---|---|---|---|---|
-| [public_dgs_corpus](public_dgs_corpus/) | DGS | ✅ | 350,168 glosses | ready |
-| [ncslgr](ncslgr/) | ASL | ✅ | 11,854 tokens | videos local; full XML needs a DAI account |
-| [bsl_corpus](bsl_corpus/) | BSL | ✅ (subset) | 6,879 segments, 6.2 h | metadata only; awaiting video from UCL |
-| [signsuisse](signsuisse/) | DSGS | 🔜 | 500 examples, 48 min | ELAN prepared; annotation not started |
-| [how2sign](how2sign/) | ASL | ❌ phrase only | 79 h | glosses sentence-timed and unreleased |
-| [mediapi_skel](mediapi_skel/) | LSF | ❌ none | 27 h | subtitle alignment only |
+| [public_dgs_corpus](public_dgs_corpus/) | DGS | ✅ 350,168 glosses | ✅ 50fps archive + 25fps TFDS | **benchmarked** |
+| [ncslgr](ncslgr/) | ASL | ⚠️ 3 files only — 157 utterances, 1,350 glosses | ❌ | needs a DAI account for the remaining XML (published corpus is 1,887 utterances / 11,854 glosses), then pose extraction from the 2,636 local videos |
+| [bsl_corpus](bsl_corpus/) | BSL | ✅ subset, 6,879 segments, 6.2 h | ❌ no video | awaiting 239 video files from UCL |
+| [signsuisse](signsuisse/) | DSGS | ❌ not annotated | ✅ on the share | gloss annotation of the 500 prepared ELAN clips |
+| [how2sign](how2sign/) | ASL | ❌ sentence-timed only, unreleased | ❌ | no per-sign timings exist; phrase level only |
+| [mediapi_skel](mediapi_skel/) | LSF | ❌ none | ✅ skeletons | no glosses at all; phrase/subtitle level only |
+
+The NCSLGR annotation we hold is the sample bundled with the SignStream XML
+parser's test resources, not corpus data — see `explore.py`'s `XML_DIR`. Enough
+to check pose quality and the BIO conversion, not to report a number.
 
 ## Where the data lives
 
@@ -37,11 +32,10 @@ The benchmark needs **per-sign boundaries** — that is the dividing line below.
 /shares/iict-sp2.ebling.cl.uzh/zifjia/backups/tensorflow_datasets_2/downloads/  (DGS eaf/cmdi)
 ```
 
-## Open blockers
+## Licensing
 
-- DAI account (free) — unlocks NCSLGR's full XML and the ASLLRP SignStream 3 corpus
-- UCL — BSL Corpus video, 239 files
-- Gloss annotation of the 500 SignSuisse examples
+The free DAI account also unlocks the ASLLRP SignStream 3 corpus, which is a
+separate dataset and would get its own folder.
 
 Licensing differs per corpus and is recorded in each `explore.md`. Internal
 research use is fine; a public release is not covered without permission.
