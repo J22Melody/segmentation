@@ -110,53 +110,65 @@ def prepare(pose, fps: float, velocity: bool = True):
     return pose_data, frame_times
 
 
-def sliding_log_probs(model, pose_data, frame_times, window, overlap, device,
-                      window_batch, torch):
-    """Run the model over overlapping windows and stitch the trusted middles.
+def overlapping_encode(overlap: float):
+    """An `encode` that overlaps the *transformer* chunks, CNN untouched.
 
-    Each frame takes its prediction from the window where it is most central, so
-    every frame gets roughly `stride/2` frames of context on both sides. With
-    stride = window/2 the trusted regions tile exactly, leaving no gaps and no
-    double-assignment.
+    Upstream runs the CNN over the whole clip and only then cuts the sequence
+    into non-overlapping `num_frames` chunks for the transformer, so attention
+    never crosses a cut. This keeps the CNN exactly as it is — full length, so
+    its features still carry context across every boundary — and slides the
+    transformer window instead, giving each frame its prediction from the chunk
+    where it sits most centrally.
+
+    That is the difference from windowing the whole model from outside, which
+    also cuts the CNN and measured no benefit.
     """
-    total = len(pose_data)
-    stride = max(1, int(round(window * (1.0 - overlap))))
-    starts = list(range(0, max(1, total - window + 1), stride))
-    if starts[-1] + window < total:      # cover the tail
-        starts.append(total - window)
+    def encode(self, pose_data, timestamps=None):
+        import torch
 
-    # Claim regions strictly left to right: each window owns from where the last
-    # one stopped up to `margin` short of its own right edge, so frames near a cut
-    # always fall to the window that sees them centrally. Sequential claiming also
-    # keeps the tail window — which starts at total-window and can overlap its
-    # predecessor by more than the stride — from overwriting frames it sees badly.
-    margin = (window - stride) // 2
-    claims, prev_hi = [], 0
-    for index, s in enumerate(starts):
-        hi = total if index == len(starts) - 1 else s + window - margin
-        claims.append((max(prev_hi, s), max(hi, prev_hi)))
-        prev_hi = claims[-1][1]
+        x = self.input_norm(self.frame_cnn(pose_data))  # full length, unchanged
+        batch, total, _ = x.shape
 
-    out = {}
-    for batch_start in range(0, len(starts), window_batch):
-        group = starts[batch_start:batch_start + window_batch]
-        poses = torch.stack([torch.from_numpy(pose_data[s:s + window]) for s in group])
-        times = torch.stack([torch.from_numpy(frame_times[s:s + window]) for s in group])
-        with torch.no_grad():
-            # windows are exactly `window` long, so the model's own chunking is a
-            # no-op and a batch of them is safe (its chunked path assumes B=1)
-            batch_probs = model(poses.to(device), timestamps=times.to(device))
+        if timestamps is None:
+            ts = (torch.arange(total, device=x.device, dtype=torch.float32)
+                  / self.REFERENCE_FPS).unsqueeze(0).expand(batch, -1)
+        else:
+            ts = timestamps.to(x.device)
+            if ts.dim() == 1:
+                ts = ts.unsqueeze(0).expand(batch, -1)
 
-        for i, s in enumerate(group):
-            lo, hi = claims[batch_start + i]
-            if hi <= lo:
-                continue
-            for level, probs in batch_probs.items():
-                if level not in out:
-                    out[level] = torch.zeros(total, probs.shape[-1],
-                                             dtype=probs.dtype, device="cpu")
-                out[level][lo:hi] = probs[i][lo - s:hi - s].cpu()
-    return out
+        chunk = self.hparams.num_frames
+        if total <= chunk:
+            for layer in self.encoder_attn:
+                x = layer(x, ts)
+            return x
+
+        stride = max(1, int(round(chunk * (1.0 - overlap))))
+        starts = list(range(0, max(1, total - chunk + 1), stride))
+        if starts[-1] + chunk < total:
+            starts.append(total - chunk)
+
+        # chunks are uniform, so run them all as one batch, as upstream does
+        segments = torch.stack([x[0, s:s + chunk] for s in starts])
+        seg_ts = torch.stack([ts[0, s:s + chunk] for s in starts])
+        for layer in self.encoder_attn:
+            segments = layer(segments, seg_ts)
+
+        # claim strictly left to right: each chunk owns from where the previous
+        # stopped to `margin` short of its own right edge, so a frame is never
+        # taken from beside a cut, and the tail chunk cannot overwrite frames it
+        # sees badly
+        out = torch.zeros_like(x)
+        margin, prev_hi = (chunk - stride) // 2, 0
+        for i, s in enumerate(starts):
+            hi = total if i == len(starts) - 1 else s + chunk - margin
+            lo, hi = max(prev_hi, s), max(hi, prev_hi)
+            if hi > lo:
+                out[0, lo:hi] = segments[i, lo - s:hi - s]
+            prev_hi = hi
+        return out
+
+    return encode
 
 
 def main() -> None:
@@ -176,14 +188,13 @@ def main() -> None:
                              "sentence's glosses (the 2023 definition, used for the "
                              "benchmark so the column is consistent); 'sentence' = "
                              "the annotated sentence bounds, this model's own target")
-    parser.add_argument("--overlap", type=float, default=0.0,
-                        help="slide a num_frames window with this overlap (0-1) "
-                             "instead of upstream's non-overlapping internal "
-                             "chunking. Default 0 = upstream behaviour; measured "
-                             "no gain at 0.5 for 1.6x the cost, see README")
-    parser.add_argument("--window-batch", type=int, default=8,
-                        help="windows per forward pass; they are uniform so this "
-                             "wastes no padding")
+    parser.add_argument("--overlap", type=float, default=None,
+                        help="overlap the transformer chunks by this fraction "
+                             "(0-1), leaving the CNN full length. Omitted = "
+                             "upstream's encode untouched. Note --overlap 0 is "
+                             "NOT the same: it still ends the last chunk at the "
+                             "final frame instead of zero-padding it, which "
+                             "isolates that change from overlap itself")
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--tfds-root", default=dgs_data.TFDS_ROOT)
     parser.add_argument("--backup", default=dgs_data.BACKUP)
@@ -219,7 +230,10 @@ def main() -> None:
           f"({'50fps originals' if native else f'{args.fps}fps TFDS build'})")
     print(f"phrase gold  {args.phrase}")
     print(f"pose dims    {pose_dims}  (velocity {'on' if velocity else 'off'})")
-    print(f"windowing    {f'{num_frames}-frame, {args.overlap:.0%} overlap' if args.overlap else 'none (upstream internal chunking)'}\n")
+    print(f"chunking     {f'{num_frames}-frame transformer chunks, {args.overlap:.0%} overlap' if args.overlap is not None else f'{num_frames}-frame, upstream encode'}\n")
+    if args.overlap is not None:
+        import types
+        model.encode = types.MethodType(overlapping_encode(args.overlap), model)
 
     started = time.time()
     clips = []
@@ -234,16 +248,10 @@ def main() -> None:
         total_frames = len(pose_data)
         frame_times_ms = frame_times * 1000
 
-        if args.overlap and num_frames and total_frames > num_frames:
-            windowed = sliding_log_probs(model, pose_data, frame_times, num_frames,
-                                         args.overlap, args.device,
-                                         args.window_batch, torch)
-            log_probs = {k: v.unsqueeze(0) for k, v in windowed.items()}
-        else:
-            with torch.no_grad():
-                log_probs = model(
-                    torch.from_numpy(pose_data).unsqueeze(0).to(args.device),
-                    timestamps=torch.from_numpy(frame_times).unsqueeze(0).to(args.device))
+        with torch.no_grad():
+            log_probs = model(
+                torch.from_numpy(pose_data).unsqueeze(0).to(args.device),
+                timestamps=torch.from_numpy(frame_times).unsqueeze(0).to(args.device))
 
         record = {"id": clip["id"], "num_frames": total_frames, "fps": clip["fps"],
                   "gold": {}, "pred": {}, "gold_bio": {}, "pred_bio": {}}
