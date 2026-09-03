@@ -120,6 +120,12 @@ def overlapping_encode(overlap: float):
     transformer window instead, giving each frame its prediction from the chunk
     where it sits most centrally.
 
+    It also ends the last chunk at the final frame instead of zero-padding it.
+    Upstream pads, and since it removed the attention mask, real frames in that
+    chunk attend to up to 1023 zeros. That is a bug, not a choice, so it is always
+    fixed here — worth phrase % 0.751 -> 0.771 on the 2026 baseline, more than
+    overlap itself buys.
+
     That is the difference from windowing the whole model from outside, which
     also cuts the CNN and measured no benefit.
     """
@@ -188,13 +194,12 @@ def main() -> None:
                              "sentence's glosses (the 2023 definition, used for the "
                              "benchmark so the column is consistent); 'sentence' = "
                              "the annotated sentence bounds, this model's own target")
-    parser.add_argument("--overlap", type=float, default=None,
+    parser.add_argument("--overlap", type=float, default=0.0,
                         help="overlap the transformer chunks by this fraction "
-                             "(0-1), leaving the CNN full length. Omitted = "
-                             "upstream's encode untouched. Note --overlap 0 is "
-                             "NOT the same: it still ends the last chunk at the "
-                             "final frame instead of zero-padding it, which "
-                             "isolates that change from overlap itself")
+                             "(0-1), leaving the CNN full length. Default 0: no "
+                             "overlap, measured to buy nothing. The last chunk "
+                             "always ends at the final frame rather than being "
+                             "zero-padded — that is a fix, not an option")
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--tfds-root", default=dgs_data.TFDS_ROOT)
     parser.add_argument("--backup", default=dgs_data.BACKUP)
@@ -230,10 +235,10 @@ def main() -> None:
           f"({'50fps originals' if native else f'{args.fps}fps TFDS build'})")
     print(f"phrase gold  {args.phrase}")
     print(f"pose dims    {pose_dims}  (velocity {'on' if velocity else 'off'})")
-    print(f"chunking     {f'{num_frames}-frame transformer chunks, {args.overlap:.0%} overlap' if args.overlap is not None else f'{num_frames}-frame, upstream encode'}\n")
-    if args.overlap is not None:
-        import types
-        model.encode = types.MethodType(overlapping_encode(args.overlap), model)
+    print(f"chunking     {num_frames}-frame transformer chunks, "
+          f"{args.overlap:.0%} overlap, tail chunk unpadded\n")
+    import types
+    model.encode = types.MethodType(overlapping_encode(args.overlap), model)
 
     started = time.time()
     clips = []

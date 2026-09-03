@@ -47,9 +47,9 @@ Public DGS Corpus test — 9 documents, **14 annotated videos** of 17.
 | *— our benchmark results below —* | | | | | | | | | | | |
 | 2023 E1s (60/50, 90/90) | ours | 0.560 | 0.701 | 0.621 | 1.031 | 0.441 | 0.589 | 0.854 | 0.814 | 0.964 | 0.361 |
 | 2023 E4s (60/50, 80/80) | ours | 0.553 | 0.695 | 0.620 | 1.074 | 0.429 | 0.593 | 0.858 | 0.817 | 1.073 | 0.376 |
-| 2026 shipped (argmax, 50fps) | ours | 0.530 | 0.800 | 0.611 | 0.941 | 0.436 | 0.513 | 0.861 | 0.792 | 0.437 | 0.071 |
+| 2026 shipped (argmax, 50fps) | ours | 0.529 | 0.800 | 0.611 | 0.943 | 0.436 | 0.513 | 0.860 | 0.791 | 0.437 | 0.071 |
 | *— our experimental results below —* | | | | | | | | | | | |
-| `00_2026_baseline` | ours | 0.510 | 0.783 | 0.597 | 1.070 | 0.391 | 0.549 | 0.886 | 0.824 | **0.751** | **0.201** |
+| `00_2026_baseline` | ours | 0.510 | 0.783 | 0.597 | 1.071 | 0.391 | 0.549 | 0.886 | 0.825 | **0.771** | **0.200** |
 
 `*` marks the 2023 paper's tuned decoding, which moves only IoU and `%` — hence
 `—` for the decoding-independent F1. `F1-mi` and `mF1S` are unpublished by anyone.

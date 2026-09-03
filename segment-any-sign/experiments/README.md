@@ -3,6 +3,30 @@
 Training and finetuning. [`../benchmark/`](../benchmark/) stays inference-only on
 published checkpoints; anything with a training loop lives here.
 
+## Basic model
+
+```mermaid
+flowchart LR
+    A["Pose sequence<br/>B × T × 50 × 3<br/>T ≤ 1024"]
+    B["Temporal U-Net 1<br/>T → T/2 → T<br/>B × T × 384<br/>RF ≈ 69 frames"]
+    C["Temporal U-Net 2<br/>T → T/2 → T/4 → T/8 → T<br/>B × T × 384<br/>combined RF ≈ 331 frames"]
+    D["4× RoPE Transformer<br/>B × T × 384<br/>context: full T-frame window"]
+    E["Sign BIO head<br/>B × T × 4"]
+    F["Phrase BIO head<br/>B × T × 4"]
+
+    A --> B --> C --> D
+    D --> E
+    D --> F
+```
+
+The two temporal U-Nets learn progressively wider local motion patterns while
+restoring the original frame rate after each block. Together they give each
+frame an approximately 331-frame receptive field (about 6.6 seconds at 50 fps).
+The Transformer then relates every frame to the complete training window. Both
+heads retain the original temporal resolution and predict one BIO distribution
+per input frame. Full validation and test videos are processed as independent
+1024-frame Transformer chunks.
+
 ## Rules
 
 The [benchmarking rules](../benchmark/README.md#rules) apply unchanged: one
@@ -84,12 +108,12 @@ row we produced.
 
 | # | run | change | sign IoU | phrase IoU | phrase % | phrase mF1S |
 |---|---|---|---|---|---|---|
-| — | 2026 shipped | reference | 0.611 | 0.792 | 0.437 | 0.071 |
-| 00 | `00_2026_baseline` | from scratch, batch 32, mean-mF1S-selected | 0.597 | 0.824 | **0.751** | **0.201** |
+| — | 2026 shipped | reference | 0.611 | 0.791 | 0.437 | 0.071 |
+| 00 | `00_2026_baseline` | from scratch, batch 32, mean-mF1S-selected | 0.597 | 0.825 | **0.771** | **0.200** |
 
 The same architecture trained on our clips for 100 epochs with no hyperparameter
 search already gives **much better phrase segmentation** than the shipped
-checkpoint (`%` 0.437 → 0.751, mF1S 0.071 → 0.201), at a small cost in sign IoU
+checkpoint (`%` 0.437 → 0.771, mF1S 0.071 → 0.200), at a small cost in sign IoU
 (0.611 → 0.597). Consistent with the shipped model having been selected on IoU
 alone, which cannot see merging — see
 [the benchmark README](../benchmark/README.md).
