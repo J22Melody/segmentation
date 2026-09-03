@@ -21,9 +21,18 @@ annotations the 2023 run uses. Everything below that is the 2026 model's own:
   * **Decoding** is `likeliest_probs_to_segments` — plain argmax. The 2026 README
     is explicit that threshold decoding was tried and rejected, so unlike the 2023
     row this one has no `b/o` to report.
-  * **Chunking** is the model's own: `PoseTaggingModel` splits anything longer
-    than `hparams.num_frames` (1024) internally, so the full clip is passed in one
-    call exactly as `evaluate.py` does.
+  * **Chunking** is upstream's by default: the whole clip goes to
+    `PoseTaggingModel`, whose CNN runs full length and whose transformer then
+    cuts it into *non-overlapping* `num_frames` chunks. Attention cannot cross a
+    cut, so a segment spanning one is seen as two halves.
+
+    `--overlap 0.5` instead slides a `num_frames` window and keeps each frame's
+    prediction from the window where it sits most centrally. Measured on the
+    2026 baseline checkpoint it changes nothing (sign IoU 0.597 -> 0.599, phrase
+    0.824 -> 0.825) for 1.6x the runtime, so it is off by default. The likely
+    reason: upstream's CNN already runs full length, so features at a chunk edge
+    carry neighbouring context, while sliding windows the CNN too — fixing the
+    attention cut and adding a convolution cut.
 
 Two conventions are translated on the way out:
 
@@ -101,6 +110,55 @@ def prepare(pose, fps: float, velocity: bool = True):
     return pose_data, frame_times
 
 
+def sliding_log_probs(model, pose_data, frame_times, window, overlap, device,
+                      window_batch, torch):
+    """Run the model over overlapping windows and stitch the trusted middles.
+
+    Each frame takes its prediction from the window where it is most central, so
+    every frame gets roughly `stride/2` frames of context on both sides. With
+    stride = window/2 the trusted regions tile exactly, leaving no gaps and no
+    double-assignment.
+    """
+    total = len(pose_data)
+    stride = max(1, int(round(window * (1.0 - overlap))))
+    starts = list(range(0, max(1, total - window + 1), stride))
+    if starts[-1] + window < total:      # cover the tail
+        starts.append(total - window)
+
+    # Claim regions strictly left to right: each window owns from where the last
+    # one stopped up to `margin` short of its own right edge, so frames near a cut
+    # always fall to the window that sees them centrally. Sequential claiming also
+    # keeps the tail window — which starts at total-window and can overlap its
+    # predecessor by more than the stride — from overwriting frames it sees badly.
+    margin = (window - stride) // 2
+    claims, prev_hi = [], 0
+    for index, s in enumerate(starts):
+        hi = total if index == len(starts) - 1 else s + window - margin
+        claims.append((max(prev_hi, s), max(hi, prev_hi)))
+        prev_hi = claims[-1][1]
+
+    out = {}
+    for batch_start in range(0, len(starts), window_batch):
+        group = starts[batch_start:batch_start + window_batch]
+        poses = torch.stack([torch.from_numpy(pose_data[s:s + window]) for s in group])
+        times = torch.stack([torch.from_numpy(frame_times[s:s + window]) for s in group])
+        with torch.no_grad():
+            # windows are exactly `window` long, so the model's own chunking is a
+            # no-op and a batch of them is safe (its chunked path assumes B=1)
+            batch_probs = model(poses.to(device), timestamps=times.to(device))
+
+        for i, s in enumerate(group):
+            lo, hi = claims[batch_start + i]
+            if hi <= lo:
+                continue
+            for level, probs in batch_probs.items():
+                if level not in out:
+                    out[level] = torch.zeros(total, probs.shape[-1],
+                                             dtype=probs.dtype, device="cpu")
+                out[level][lo:hi] = probs[i][lo - s:hi - s].cpu()
+    return out
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -118,6 +176,14 @@ def main() -> None:
                              "sentence's glosses (the 2023 definition, used for the "
                              "benchmark so the column is consistent); 'sentence' = "
                              "the annotated sentence bounds, this model's own target")
+    parser.add_argument("--overlap", type=float, default=0.0,
+                        help="slide a num_frames window with this overlap (0-1) "
+                             "instead of upstream's non-overlapping internal "
+                             "chunking. Default 0 = upstream behaviour; measured "
+                             "no gain at 0.5 for 1.6x the cost, see README")
+    parser.add_argument("--window-batch", type=int, default=8,
+                        help="windows per forward pass; they are uniform so this "
+                             "wastes no padding")
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--tfds-root", default=dgs_data.TFDS_ROOT)
     parser.add_argument("--backup", default=dgs_data.BACKUP)
@@ -152,7 +218,8 @@ def main() -> None:
     print(f"source       {args.source} "
           f"({'50fps originals' if native else f'{args.fps}fps TFDS build'})")
     print(f"phrase gold  {args.phrase}")
-    print(f"pose dims    {pose_dims}  (velocity {'on' if velocity else 'off'})\n")
+    print(f"pose dims    {pose_dims}  (velocity {'on' if velocity else 'off'})")
+    print(f"windowing    {f'{num_frames}-frame, {args.overlap:.0%} overlap' if args.overlap else 'none (upstream internal chunking)'}\n")
 
     started = time.time()
     clips = []
@@ -167,9 +234,16 @@ def main() -> None:
         total_frames = len(pose_data)
         frame_times_ms = frame_times * 1000
 
-        with torch.no_grad():
-            log_probs = model(torch.from_numpy(pose_data).unsqueeze(0).to(args.device),
-                              timestamps=torch.from_numpy(frame_times).unsqueeze(0).to(args.device))
+        if args.overlap and num_frames and total_frames > num_frames:
+            windowed = sliding_log_probs(model, pose_data, frame_times, num_frames,
+                                         args.overlap, args.device,
+                                         args.window_batch, torch)
+            log_probs = {k: v.unsqueeze(0) for k, v in windowed.items()}
+        else:
+            with torch.no_grad():
+                log_probs = model(
+                    torch.from_numpy(pose_data).unsqueeze(0).to(args.device),
+                    timestamps=torch.from_numpy(frame_times).unsqueeze(0).to(args.device))
 
         record = {"id": clip["id"], "num_frames": total_frames, "fps": clip["fps"],
                   "gold": {}, "pred": {}, "gold_bio": {}, "pred_bio": {}}
@@ -200,6 +274,7 @@ def main() -> None:
         # argmax decoding has no thresholds; score.py renders the absence as "-"
         "thresholds": {},
         "source": args.source,
+        "overlap": args.overlap,
         "phrase_gold": args.phrase,
         "pipeline": "sign_language_segmentation main (dist/2026)",
         "clips": clips,
