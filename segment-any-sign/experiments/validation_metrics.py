@@ -25,9 +25,11 @@ with augmentation applied, while validation runs whole videos with none. Expect
 train to look easier. The gap between the curves is still the useful signal — it
 is where overfitting shows up.
 
-Cost: one extra forward per validation batch (upstream already does two), and one
-per sampled train batch — every `metrics_every_n_steps` steps, 25 by default, so
-about 4% overhead on training.
+Cost: none at validation. Upstream runs two forward passes per validation batch
+and ours would be a third, so instead the forward is computed once and cached for
+all three — which makes validation *cheaper* than it was before these metrics
+existed. Training pays one extra forward every `metrics_every_n_steps` steps
+(9, about once per epoch at batch 64).
 """
 
 from __future__ import annotations
@@ -69,13 +71,25 @@ def _empty() -> dict:
 class ValidationMetricsModel(PoseTaggingModel):
     """PoseTaggingModel reporting the benchmark's metrics on train and validation."""
 
-    #: compute train metrics every N steps; 1 would roughly double training cost
-    metrics_every_n_steps = 25
+    #: compute train metrics every N steps. 9 ~= once per epoch at batch 64 over
+    #: 586 clips; 1 would roughly double training cost.
+    metrics_every_n_steps = 9
 
-    def _accumulate(self, batch, collected: dict) -> None:
+    #: set for the duration of one validation_step so upstream's two internal
+    #: forward passes reuse ours instead of recomputing it
+    _cached_log_probs = None
+
+    def forward(self, pose_data, timestamps=None, *args, **kwargs):
+        if self._cached_log_probs is not None:
+            return self._cached_log_probs
+        return super().forward(pose_data, timestamps, *args, **kwargs)
+
+    def _accumulate(self, batch, collected: dict, log_probs=None) -> None:
         """Score one batch into `collected`, exactly as benchmark/score.py would."""
         with torch.no_grad():
-            log_probs = self.forward(batch["pose"], timestamps=batch.get("timestamps"))
+            if log_probs is None:
+                log_probs = self.forward(batch["pose"],
+                                         timestamps=batch.get("timestamps"))
 
             for upstream_name, our in LEVELS.items():
                 gold_all = batch["bio"][upstream_name]
@@ -159,8 +173,22 @@ class ValidationMetricsModel(PoseTaggingModel):
         self._val_collected = _empty()
 
     def validation_step(self, batch, *args):
-        loss = super().validation_step(batch, *args)
-        self._accumulate(batch, self._val_collected)
+        # Upstream runs two forwards per validation batch — one in `step` for the
+        # loss, one in `validation_step` for IoU — and ours would be a third. On
+        # whole dev videos that is the single largest cost in a run, so compute it
+        # once and let both reuse it through the cache in `forward` above. No
+        # upstream logic is duplicated; it simply gets handed the tensor it would
+        # otherwise recompute.
+        with torch.no_grad():
+            log_probs = super().forward(batch["pose"],
+                                        timestamps=batch.get("timestamps"))
+        self._cached_log_probs = log_probs
+        try:
+            loss = super().validation_step(batch, *args)
+        finally:
+            self._cached_log_probs = None
+
+        self._accumulate(batch, self._val_collected, log_probs=log_probs)
         return loss
 
     def on_validation_epoch_end(self) -> None:
