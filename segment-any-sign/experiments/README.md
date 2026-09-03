@@ -102,18 +102,31 @@ directory.
 
 ## Ablations
 
-Filled in as runs land. Test numbers, from `benchmark/score.py` on the same 14
-clips as every benchmark row. The shipped 2026 checkpoint is the reference, not a
-row we produced.
+Filled in as runs land. Test numbers from `benchmark/score.py`, same 14 clips and
+same protocol as [`../benchmark/`](../benchmark/) — but kept here, not in the
+benchmark table, which is for published models and their reproductions.
 
-| # | run | change | sign IoU | phrase IoU | phrase % | phrase mF1S |
-|---|---|---|---|---|---|---|
-| — | 2026 shipped | reference | 0.611 | 0.791 | 0.437 | 0.071 |
-| 00 | `00_2026_baseline` | from scratch, batch 32, mean-mF1S-selected | 0.597 | 0.825 | **0.771** | **0.200** |
+The 2026 shipped checkpoint is the reference, not a row we produced.
 
-The same architecture trained on our clips for 100 epochs with no hyperparameter
-search already gives **much better phrase segmentation** than the shipped
-checkpoint (`%` 0.437 → 0.771, mF1S 0.071 → 0.200), at a small cost in sign IoU
-(0.611 → 0.597). Consistent with the shipped model having been selected on IoU
-alone, which cannot see merging — see
-[the benchmark README](../benchmark/README.md).
+| | | Sign | | | | | Phrase | | | | |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| **Run** | **Change** | **F1-ma** | **F1-mi** | **IoU** | **%** | **mF1S** | **F1-ma** | **F1-mi** | **IoU** | **%** | **mF1S** |
+| 2026 shipped | reference | 0.529 | 0.800 | **0.611** | 0.943 | **0.436** | 0.513 | 0.860 | 0.791 | 0.437 | 0.071 |
+| `00_2026_baseline` | all tricks on, batch 32 | 0.510 | 0.783 | 0.597 | 1.071 | 0.391 | 0.549 | **0.886** | **0.825** | 0.771 | 0.200 |
+| `01_basic_lr1e-3` | all tricks off, batch 64, lr 1e-3 | 0.512 | 0.790 | 0.568 | 1.092 | 0.382 | **0.555** | 0.883 | 0.815 | **1.019** | **0.263** |
+
+`01_basic` turns off dice loss, all three dropouts and velocity; `fps_aug` stays
+on. Both of ours train from scratch for 500 epochs with no hyperparameter search
+and select on mean mF1S.
+
+**The tricks trade phrase segmentation for sign IoU.** Stripping them costs sign
+IoU (0.597 → 0.568, and 0.611 for the shipped model) but takes phrase `%` from
+0.771 to **1.019** — essentially the right number of segments — and phrase mF1S
+from 0.200 to **0.263**, the best of the three by a wide margin. The shipped
+model, tuned on IoU alone, is worst on both phrase counting metrics (`%` 0.437,
+mF1S 0.071) while leading on sign IoU.
+
+That the dice loss applies **only to the sign head** fits the pattern: it is the
+most likely single cause of the sign IoU gap, and it cannot explain the phrase
+gain. Splitting the four tricks apart is what the next runs are for.
+

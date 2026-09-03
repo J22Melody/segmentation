@@ -314,11 +314,14 @@ def test_best_checkpoint(run_dir: Path, phrase: str) -> None:
               f"({checkpoint.name}); others: {[c.name for c in candidates[:-1]]}")
 
     here = Path(__file__).resolve().parent
-    predictions = here.parent / "benchmark" / "predictions" / f"{run_dir.name}.json"
+    # the experiment id, without the date upstream appends to the directory:
+    # one id names the run, the predictions and both tables
+    run_id = run_dir.name.rsplit("-", 1)[0]
+    predictions = here.parent / "benchmark" / "predictions" / f"{run_id}.json"
     steps = [
         [sys.executable, str(here.parent / "benchmark" / "predict_dgs_2026.py"),
          "--split", "test", "--model", str(checkpoint), "--phrase", phrase,
-         "--label", run_dir.name, "--out", str(predictions)],
+         "--label", run_id, "--out", str(predictions)],
         [sys.executable, str(here.parent / "benchmark" / "score.py"), str(predictions)],
     ]
 
