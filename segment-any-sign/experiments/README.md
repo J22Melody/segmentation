@@ -111,22 +111,10 @@ The 2026 shipped checkpoint is the reference, not a row we produced.
 | | | Sign | | | | | Phrase | | | | |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | **Run** | **Change** | **F1-ma** | **F1-mi** | **IoU** | **%** | **mF1S** | **F1-ma** | **F1-mi** | **IoU** | **%** | **mF1S** |
-| 2026 shipped | reference | 0.529 | 0.800 | **0.611** | 0.943 | **0.436** | 0.513 | 0.860 | 0.791 | 0.437 | 0.071 |
-| `00_2026_baseline` | all tricks on, batch 32 | 0.510 | 0.783 | 0.597 | 1.071 | 0.391 | 0.549 | **0.886** | **0.825** | 0.771 | 0.200 |
-| `01_basic_lr1e-3` | all tricks off, batch 64, lr 1e-3 | 0.512 | 0.790 | 0.568 | 1.092 | 0.382 | **0.555** | 0.883 | 0.815 | **1.019** | **0.263** |
+| 2026 shipped | reference | 0.529 | 0.800 | 0.611 | 0.943 | 0.436 | 0.513 | 0.860 | 0.791 | 0.437 | 0.071 |
+| `00_2026_baseline` | all tricks on, batch 32, lr 1e-3 | 0.510 | 0.783 | 0.597 | 1.071 | 0.391 | 0.549 | 0.886 | 0.825 | 0.771 | 0.200 |
+| `01_basic_lr1e-3` | all tricks off, batch 64, lr 1e-3 | 0.512 | 0.790 | 0.568 | 1.092 | 0.382 | 0.555 | 0.883 | 0.815 | 1.019 | 0.263 |
 
-`01_basic` turns off dice loss, all three dropouts and velocity; `fps_aug` stays
-on. Both of ours train from scratch for 500 epochs with no hyperparameter search
-and select on mean mF1S.
-
-**The tricks trade phrase segmentation for sign IoU.** Stripping them costs sign
-IoU (0.597 → 0.568, and 0.611 for the shipped model) but takes phrase `%` from
-0.771 to **1.019** — essentially the right number of segments — and phrase mF1S
-from 0.200 to **0.263**, the best of the three by a wide margin. The shipped
-model, tuned on IoU alone, is worst on both phrase counting metrics (`%` 0.437,
-mF1S 0.071) while leading on sign IoU.
-
-That the dice loss applies **only to the sign head** fits the pattern: it is the
-most likely single cause of the sign IoU gap, and it cannot explain the phrase
-gain. Splitting the four tricks apart is what the next runs are for.
-
+"All tricks" is dice loss, the three dropouts, and velocity; `fps_aug` is
+on in both. Both of ours train from scratch for 500 epochs, no
+hyperparameter search, selected on mean mF1S.
