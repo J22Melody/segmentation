@@ -44,8 +44,7 @@ scalar summary to the W&B run. A run that leaks documents between splits aborts
 before training rather than producing a number nobody can trust.
 
 It also writes `dist/<run>/run_config.json`: every hyperparameter, the command
-line, the git commit and whether the tree was dirty, and the python/torch/GPU it
-ran on — enough to reproduce the run from the checkpoint alone.
+line, the git commit, and the python/torch/GPU it ran on — enough to reproduce the run from the checkpoint alone.
 
 The full metric set from `../metrics/` is logged on **both** train and validation
 under matching names, so W&B can overlay the two curves — see
@@ -246,16 +245,13 @@ def write_run_config(run_dir: Path, args, mine, monitor: str) -> None:
                  "select_on": mine.select_on, "limit": mine.limit},
         "args": {k: v for k, v in sorted(vars(args).items())},
         "code": {"commit": git("rev-parse", "HEAD"),
-                 "branch": git("rev-parse", "--abbrev-ref", "HEAD"),
-                 "dirty": bool(git("status", "--porcelain"))},
+                 "branch": git("rev-parse", "--abbrev-ref", "HEAD")},
         "environment": {"python": platform.python_version(), "torch": torch_version,
                         "host": platform.node(), "gpu": device_name},
     }
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "run_config.json").write_text(json.dumps(config, indent=2, default=str))
-    print(f"wrote {run_dir}/run_config.json"
-          f"  (commit {config['code']['commit'][:8]}"
-          f"{', DIRTY' if config['code']['dirty'] else ''})")
+    print(f"wrote {run_dir}/run_config.json  (commit {config['code']['commit'][:8]})")
 
 
 def write_data_report(run_dir: Path, phrase: str) -> dict:

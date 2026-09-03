@@ -133,12 +133,15 @@ class ValidationMetricsModel(PoseTaggingModel):
         if sign > 0 and phrase > 0:
             self.log(f"{prefix}_hm_iou_ours", 2 * sign * phrase / (sign + phrase))
 
-        # The checkpoint selection metric. Logged unconditionally — a metric the
-        # trainer monitors must exist from the first validation epoch, or
-        # EarlyStopping raises before the model has had a chance to learn.
-        self.log(f"{prefix}_mean_mf1s",
-                 (mf1s.get("sign", 0.0) + mf1s.get("phrase", 0.0)) / 2,
-                 prog_bar=(prefix == "validation"))
+        # The checkpoint selection metric. Always logged at validation — a metric
+        # the trainer monitors must exist from the first validation epoch or
+        # EarlyStopping raises. At train time it is logged only when a batch was
+        # actually sampled: with few steps per epoch, `metrics_every_n_steps` can
+        # skip whole epochs, and logging 0.0 for those would draw a sawtooth.
+        if prefix == "validation" or collected["sign"]["frame_f1"]:
+            self.log(f"{prefix}_mean_mf1s",
+                     (mf1s.get("sign", 0.0) + mf1s.get("phrase", 0.0)) / 2,
+                     prog_bar=(prefix == "validation"))
 
     def on_train_epoch_start(self) -> None:
         self._train_collected = _empty()

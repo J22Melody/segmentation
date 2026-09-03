@@ -82,18 +82,23 @@ def rle(values) -> list[list[int]]:
     return out
 
 
-def prepare(pose, fps: float):
+def prepare(pose, fps: float, velocity: bool = True):
     """Apply the 2026 preprocessing to a raw holistic pose.
 
-    Mirrors `load_and_augment` outside training: preprocess, take xyz, append
-    fps-normalised velocity. Returns (pose_data, frame_times_seconds).
+    Mirrors `load_and_augment` outside training: preprocess, take xyz, and append
+    fps-normalised velocity when the model was trained with it. `velocity` is read
+    off the checkpoint rather than assumed — a model trained without it takes 3
+    dims per joint, and feeding it 6 fails outright.
     """
     from sign_language_segmentation.utils.pose import compute_velocity, preprocess_pose
 
     pose = preprocess_pose(pose)
     pose_data = pose.body.data.filled(0)[:, 0, :, :3].astype(np.float32)
     frame_times = np.arange(len(pose_data), dtype=np.float32) / fps
-    return np.concatenate([pose_data, compute_velocity(pose_data, frame_times)], axis=-1), frame_times
+    if velocity:
+        pose_data = np.concatenate(
+            [pose_data, compute_velocity(pose_data, frame_times)], axis=-1)
+    return pose_data, frame_times
 
 
 def main() -> None:
@@ -132,6 +137,9 @@ def main() -> None:
     model_path = args.model or resolve_model_path()
     model = _load_model_uncached(model_dir=model_path, device=args.device)
     num_frames = getattr(model.hparams, "num_frames", None)
+    # (joints, dims); dims is 6 with velocity appended, 3 without
+    pose_dims = tuple(getattr(model.hparams, "pose_dims", (50, 6)))
+    velocity = pose_dims[1] >= 6
 
     out_path = args.out or (Path(__file__).parent / "predictions" /
                             f"dgs_{args.split}_2026.json")
@@ -143,7 +151,8 @@ def main() -> None:
     print(f"decoding     likeliest (argmax)")
     print(f"source       {args.source} "
           f"({'50fps originals' if native else f'{args.fps}fps TFDS build'})")
-    print(f"phrase gold  {args.phrase}\n")
+    print(f"phrase gold  {args.phrase}")
+    print(f"pose dims    {pose_dims}  (velocity {'on' if velocity else 'off'})\n")
 
     started = time.time()
     clips = []
@@ -154,7 +163,7 @@ def main() -> None:
                                        tfds_root=args.tfds_root, backup=args.backup))
 
     for clip in clip_source:
-        pose_data, frame_times = prepare(clip["pose"], clip["fps"])
+        pose_data, frame_times = prepare(clip["pose"], clip["fps"], velocity=velocity)
         total_frames = len(pose_data)
         frame_times_ms = frame_times * 1000
 
