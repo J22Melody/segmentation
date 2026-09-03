@@ -7,9 +7,19 @@ filters and gold that [`../benchmark/`](../benchmark/) scores, and then calls
 `sign_language_segmentation.train.train()` unchanged.
 
 Every hyperparameter is upstream's `args.py`; anything not passed keeps its 2026
-default, except for three we override: `--batch_size` 32 (upstream 8), `--epochs`
-100 (200) and `--patience` 25 (10). These flags are ours and are stripped before
-upstream parses:
+default **except** for the basic-baseline overrides below, each chosen so that a
+later experiment turns exactly one trick back on:
+
+    --batch_size 64          (upstream 8)      --dice_loss_weight 0   (1.5)
+    --epochs 500             (200)             --frame_dropout 0      (0.15)
+    --patience 10% of epochs (10)              --body_part_dropout 0  (0.1)
+    velocity off             (on, unswitchable) --attn_dropout 0      (0.1)
+
+`fps_aug` stays on: upstream calls it essential, and disabling it also switches
+label construction from `create_bio_from_times` to `create_bio`, which would
+confound the ablation.
+
+These flags are ours and are stripped before upstream parses:
 
     --phrase {glosses,sentence}   what counts as a phrase (default glosses, the
                                   benchmark's definition — see ../benchmark/)
@@ -69,6 +79,10 @@ def main() -> None:
     ours.add_argument("--skip-stats", action="store_true")
     ours.add_argument("--no-test", action="store_true")
     ours.add_argument("--limit", type=int, default=None)
+    ours.add_argument("--velocity", choices=["on", "off"], default="off",
+                      help="append fps-normalised velocity features (3->6 dims). "
+                           "Upstream declares --velocity as store_true with "
+                           "default True, so it cannot be disabled there at all")
     ours.add_argument("--select-on", default="mean_mf1s",
                       choices=["mean_mf1s", "hm_iou"],
                       help="checkpoint selection metric (default mean_mf1s: the "
@@ -128,16 +142,25 @@ def main() -> None:
     from experiments.validation_metrics import ValidationMetricsModel
     upstream_train.PoseTaggingModel = ValidationMetricsModel
 
-    # Batch 32 rather than upstream's 8: measured activations are 0.33 GiB per
-    # sample at 1024 frames, so 32 is comfortable on a 40GB A100 and leaves room
-    # on an 80GB one. Note this changes steps/epoch, and with it the OneCycle
-    # schedule — a run at another batch size is not directly comparable.
-    if "--batch_size" not in rest:
-        args.batch_size = 32
-    if "--epochs" not in rest:
-        args.epochs = 100
+    # Defaults describe the *basic baseline*: every optional trick off, so each
+    # later experiment turns exactly one back on. This deliberately departs from
+    # upstream's defaults — see README.md — and each departure is listed here.
+    #
+    # Batch 64: measured activations are 0.33 GiB per sample at 1024 frames, so
+    # ~36 GiB peak. Fine on an 80GB A100, tight on a 40GB one. It also leaves
+    # only ~9 steps/epoch over 586 clips, which is why epochs is 500.
+    basic = {"batch_size": 64, "epochs": 500,
+             "dice_loss_weight": 0.0, "frame_dropout": 0.0,
+             "body_part_dropout": 0.0, "attn_dropout": 0.0}
+    for key, value in basic.items():
+        if f"--{key}" not in rest:
+            setattr(args, key, value)
+
+    # patience tracks the budget rather than being a fixed number of epochs
     if "--patience" not in rest:
-        args.patience = 25
+        args.patience = max(1, round(0.1 * args.epochs))
+
+    args.velocity = mine.velocity == "on"
 
     run_dir = Path("dist") / _dated_run_name(args.run_name)
 
