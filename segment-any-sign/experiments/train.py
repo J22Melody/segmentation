@@ -26,7 +26,10 @@ These flags are ours and are stripped before upstream parses:
     --dry-run                     build the data, model and one forward pass,
                                   then stop. No optimiser step, no wandb.
     --skip-stats                  skip the data report (it costs ~1 min)
-    --no-test                     skip the end-of-training test evaluation
+    --eval-split {validation,test,none}
+                                  what to score the best checkpoint on when
+                                  training ends. Default validation — ablations
+                                  must not touch test
     --limit N                     use only the first N annotated clips per split.
                                   Turns a dry run into seconds. Never for a
                                   reported number.
@@ -51,7 +54,11 @@ under matching names, so W&B can overlay the two curves — see
 [`validation_metrics.py`](validation_metrics.py).
 
 Validation runs **every epoch** (upstream's default), and the best checkpoint
-maximises `validation_mean_mf1s` — see `--select-on`. **Test runs once**, after training, on
+maximises `validation_mean_mf1s` — see `--select-on`.
+
+When training ends the best checkpoint is scored **on validation**, into
+`experiments/predictions/`. Test is reserved for the one model finally reported:
+`--eval-split test` writes to `benchmark/predictions/` instead. **Test runs once**, after training, on
 that checkpoint — through `benchmark/`, so the number lands on the same protocol
 as every row of the benchmark table. Results go to `dist/<run>/test_results.log`.
 
@@ -81,7 +88,12 @@ def main() -> None:
     ours.add_argument("--phrase", default="glosses", choices=["glosses", "sentence"])
     ours.add_argument("--dry-run", action="store_true")
     ours.add_argument("--skip-stats", action="store_true")
-    ours.add_argument("--no-test", action="store_true")
+    ours.add_argument("--eval-split", default="validation",
+                      choices=["validation", "test", "none"],
+                      help="what to evaluate the best checkpoint on when training "
+                           "ends. Default validation: ablations must not touch "
+                           "test, or repeated looks leak it into model selection. "
+                           "Use test only for the model you finally report")
     ours.add_argument("--limit", type=int, default=None)
     ours.add_argument("--velocity", choices=["on", "off"], default="off",
                       help="append fps-normalised velocity features (3->6 dims). "
@@ -199,8 +211,8 @@ def main() -> None:
     # follow it without patching anything
     train(monitor_metric=monitor)
 
-    if not mine.no_test:
-        test_best_checkpoint(run_dir, phrase=mine.phrase)
+    if mine.eval_split != "none":
+        evaluate_best_checkpoint(run_dir, phrase=mine.phrase, split=mine.eval_split)
 
 
 def report_effective_config(args, mine, run_name: str) -> None:
@@ -292,12 +304,17 @@ def write_data_report(run_dir: Path, phrase: str) -> dict:
     return report
 
 
-def test_best_checkpoint(run_dir: Path, phrase: str) -> None:
-    """Evaluate the best checkpoint on test, once, through the benchmark.
+def evaluate_best_checkpoint(run_dir: Path, phrase: str, split: str) -> None:
+    """Evaluate the best checkpoint, once, through the benchmark's own scripts.
 
-    Deliberately shells out to `benchmark/predict_dgs_2026.py` and `score.py`
-    rather than scoring inline: the test number a run reports and the number in
-    the benchmark table must come from the same code, or they will drift.
+    Shells out to `benchmark/predict_dgs_2026.py` and `score.py` rather than
+    scoring inline, so a run's number and a table's number come from the same
+    code and cannot drift.
+
+    Validation predictions go to `experiments/predictions/`, test predictions to
+    `benchmark/predictions/` — separate directories so that
+    `score.py benchmark/predictions/*.json` can never silently mix a dev score
+    into the benchmark table.
     """
     import subprocess
 
@@ -317,10 +334,13 @@ def test_best_checkpoint(run_dir: Path, phrase: str) -> None:
     # the experiment id, without the date upstream appends to the directory:
     # one id names the run, the predictions and both tables
     run_id = run_dir.name.rsplit("-", 1)[0]
-    predictions = here.parent / "benchmark" / "predictions" / f"{run_id}.json"
+    predictions = (here.parent / "benchmark" / "predictions" / f"{run_id}.json"
+                   if split == "test" else
+                   here / "predictions" / f"{run_id}.json")
+    predictions.parent.mkdir(parents=True, exist_ok=True)
     steps = [
         [sys.executable, str(here.parent / "benchmark" / "predict_dgs_2026.py"),
-         "--split", "test", "--model", str(checkpoint), "--phrase", phrase,
+         "--split", split, "--model", str(checkpoint), "--phrase", phrase,
          "--label", run_id, "--out", str(predictions)],
         [sys.executable, str(here.parent / "benchmark" / "score.py"), str(predictions)],
     ]
@@ -335,8 +355,8 @@ def test_best_checkpoint(run_dir: Path, phrase: str) -> None:
             print(f"test step failed ({result.returncode})")
             break
 
-    (run_dir / "test_results.log").write_text("\n".join(output))
-    print(f"wrote {run_dir}/test_results.log")
+    (run_dir / f"{split}_results.log").write_text("\n".join(output))
+    print(f"wrote {run_dir}/{split}_results.log")
 
 
 def dry_run(args) -> None:

@@ -102,19 +102,23 @@ directory.
 
 ## Ablations
 
-Filled in as runs land. Test numbers from `benchmark/score.py`, same 14 clips and
-same protocol as [`../benchmark/`](../benchmark/) — but kept here, not in the
-benchmark table, which is for published models and their reproductions.
+Filled in as runs land. **Validation numbers**, scored by `benchmark/score.py`
+through the same protocol the benchmark uses. Ablations stay on dev: test is for
+the single model finally reported, and looking at it once per experiment would
+leak it into model selection.
 
 The 2026 shipped checkpoint is the reference, not a row we produced.
 
 | | | Sign | | | | | Phrase | | | | |
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | **Run** | **Change** | **F1-ma** | **F1-mi** | **IoU** | **%** | **mF1S** | **F1-ma** | **F1-mi** | **IoU** | **%** | **mF1S** |
-| 2026 shipped | reference | 0.529 | 0.800 | 0.611 | 0.943 | 0.436 | 0.513 | 0.860 | 0.791 | 0.437 | 0.071 |
-| `00_2026_baseline` | all tricks on, batch 32, lr 1e-3 | 0.510 | 0.783 | 0.597 | 1.071 | 0.391 | 0.549 | 0.886 | 0.825 | 0.771 | 0.200 |
-| `01_basic_lr1e-3` | all tricks off, batch 64, lr 1e-3 | 0.512 | 0.790 | 0.568 | 1.092 | 0.382 | 0.555 | 0.883 | 0.815 | 1.019 | 0.263 |
+| 2026 shipped | reference | 0.525 | 0.812 | 0.610 | 0.974 | 0.495 | 0.476 | 0.888 | 0.793 | 0.553 | 0.051 |
+| `00_2026_baseline` | all tricks on, batch 32, lr 1e-3 | 0.510 | 0.800 | 0.598 | 1.067 | 0.465 | 0.515 | 0.905 | 0.822 | 0.744 | 0.204 |
+| `01_basic_lr1e-3` | all tricks off, batch 64, lr 1e-3 | 0.519 | 0.813 | 0.587 | 1.121 | 0.464 | 0.544 | 0.911 | 0.831 | 1.080 | 0.286 |
 
-"All tricks" is dice loss, the three dropouts, and velocity; `fps_aug` is
-on in both. Both of ours train from scratch for 500 epochs, no
-hyperparameter search, selected on mean mF1S.
+"All tricks" is dice loss, the three dropouts, and velocity; `fps_aug` is on in
+both. Both of ours train from scratch for 500 epochs, no hyperparameter search,
+selected on mean mF1S.
+
+Predictions live in `experiments/predictions/` (dev), kept apart from
+`benchmark/predictions/` (test) so the two can never be scored together.
