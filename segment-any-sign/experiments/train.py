@@ -51,7 +51,6 @@ from __future__ import annotations
 import argparse
 import json
 import sys
-from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -103,12 +102,6 @@ def main() -> None:
     import sign_language_segmentation.train as upstream_train
     from sign_language_segmentation.train import _dated_run_name, train
 
-    # Upstream names the run directory `<run_name>-<YYYY.MM.DD>`, so two runs on
-    # one day share it — and Lightning then writes best-v1.ckpt beside the first
-    # run's best.ckpt rather than overwriting. That silently mixes two models in
-    # one directory. Stamping the time makes every run its own directory.
-    args.run_name = f"{args.run_name or 'model'}-{datetime.now():%H%M%S}"
-
     # Upstream's train() instantiates whatever `PoseTaggingModel` names in its own
     # module namespace, so swapping the symbol there is enough to get the extra
     # metrics without touching upstream code or copying its training loop.
@@ -127,6 +120,15 @@ def main() -> None:
         args.patience = 25
 
     run_dir = Path("dist") / _dated_run_name(args.run_name)
+
+    # Upstream names the directory `<run_name>-<YYYY.MM.DD>`, so a second run with
+    # the same id on the same day lands in it — and Lightning writes best-v1.ckpt
+    # beside the first run's best.ckpt rather than overwriting, silently mixing
+    # two models in one directory. Refuse instead: one id, one run, one directory.
+    if not mine.dry_run and list(run_dir.glob("*.ckpt")):
+        raise SystemExit(
+            f"{run_dir} already holds checkpoints. Give --run_name a new "
+            f"experiment id (<NN>_<slug>) rather than reusing this one.")
     # the data report describes the full corpus, so it is meaningless under --limit
     if not mine.skip_stats and mine.limit is None:
         report = write_data_report(run_dir, phrase=mine.phrase)

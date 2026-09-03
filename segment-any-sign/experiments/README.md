@@ -85,7 +85,7 @@ row we produced.
 | # | run | change | sign IoU | phrase IoU | phrase % | phrase mF1S |
 |---|---|---|---|---|---|---|
 | — | 2026 shipped | reference | 0.611 | 0.792 | 0.437 | 0.071 |
-| 00 | `baseline-2026` | from scratch, batch 32, mean-mF1S-selected | 0.597 | 0.824 | **0.751** | **0.201** |
+| 00 | `00_2026_baseline` | from scratch, batch 32, mean-mF1S-selected | 0.597 | 0.824 | **0.751** | **0.201** |
 
 The same architecture trained on our clips for 100 epochs with no hyperparameter
 search already gives **much better phrase segmentation** than the shipped
