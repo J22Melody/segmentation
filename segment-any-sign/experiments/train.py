@@ -20,6 +20,9 @@ upstream parses:
     --limit N                     use only the first N annotated clips per split.
                                   Turns a dry run into seconds. Never for a
                                   reported number.
+
+A dry run or any `--limit` run is named `_scratch_*`, so its artefacts are
+self-evidently throwaway; a dry run also deletes its own run directory.
     --select-on {mean_mf1s,hm_iou}
                                   what the best checkpoint maximises. Default is
                                   the mean of sign and phrase mF1S; upstream used
@@ -50,6 +53,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import sys
 from pathlib import Path
 
@@ -91,16 +95,32 @@ def main() -> None:
     args.corpus = args.poses = dgs_data.BACKUP
     args.data_loader = "datasets/public_dgs_corpus/load.py (archive, native fps)"
 
+    import sign_language_segmentation.train as upstream_train
+    from sign_language_segmentation.train import _dated_run_name, train
+
+    # A dry run or a --limit run is never a result. Prefix its name so any
+    # artefact it leaves is obviously throwaway even months later, and so it can
+    # never collide with a real experiment id.
+    throwaway = mine.dry_run or mine.limit is not None
+    if throwaway:
+        args.run_name = f"_scratch_{args.run_name or 'run'}"
+
+    # One identity everywhere: upstream derives both the run directory and the
+    # W&B run name from `_dated_run_name(args.run_name)`, so the experiment id
+    # that names dist/<id>-<date>/ is the same string shown in W&B and in the
+    # tables. The project defaults to this repo rather than upstream's generic
+    # "segmentation", so our runs do not land in someone else's project.
+    if args.wandb_project == "segmentation":
+        args.wandb_project = "segment-any-sign"
+
     print("\neffective data configuration"
           f"\n  dataset      {args.datasets}"
           f"\n  loader       {args.data_loader}"
+          f"\n  run / wandb  {_dated_run_name(args.run_name)}"
           f"\n  archive      {dgs_data.BACKUP}"
           f"\n  phrase gold  {args.phrase}"
           + (f"\n  limit        {args.limit} clips per split (NOT a reportable run)"
              if args.limit else ""))
-
-    import sign_language_segmentation.train as upstream_train
-    from sign_language_segmentation.train import _dated_run_name, train
 
     # Upstream's train() instantiates whatever `PoseTaggingModel` names in its own
     # module namespace, so swapping the symbol there is enough to get the extra
@@ -139,7 +159,14 @@ def main() -> None:
                 setattr(args, f"data_{split}_{key}", s[key])
 
     if mine.dry_run:
-        dry_run(args)
+        existed = run_dir.exists()
+        try:
+            dry_run(args)
+        finally:
+            # leave nothing behind: a dry run proves the wiring, it is not a result
+            if not existed and run_dir.exists():
+                shutil.rmtree(run_dir, ignore_errors=True)
+                print(f"cleaned up {run_dir}")
         return
 
     monitor = {"mean_mf1s": "validation_mean_mf1s",
