@@ -43,6 +43,10 @@ and correctness checks — to `dist/<run>/data_stats.{json,log}`, and attaches i
 scalar summary to the W&B run. A run that leaks documents between splits aborts
 before training rather than producing a number nobody can trust.
 
+It also writes `dist/<run>/run_config.json`: every hyperparameter, the command
+line, the git commit and whether the tree was dirty, and the python/torch/GPU it
+ran on — enough to reproduce the run from the checkpoint alone.
+
 The full metric set from `../metrics/` is logged on **both** train and validation
 under matching names, so W&B can overlay the two curves — see
 [`validation_metrics.py`](validation_metrics.py).
@@ -65,6 +69,7 @@ import argparse
 import json
 import shutil
 import sys
+from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -196,12 +201,61 @@ def main() -> None:
                "hm_iou": "validation_hm_iou"}[mine.select_on]
     print(f"  selection    {monitor} (max)\n")
 
+    write_run_config(run_dir, args, mine, monitor)
+
     # train() takes monitor_metric, so both ModelCheckpoint and EarlyStopping
     # follow it without patching anything
     train(monitor_metric=monitor)
 
     if not mine.no_test:
         test_best_checkpoint(run_dir, phrase=mine.phrase)
+
+
+def write_run_config(run_dir: Path, args, mine, monitor: str) -> None:
+    """Record everything needed to reproduce this run, beside its checkpoints.
+
+    Every hyperparameter (upstream's and ours), the exact command line, the git
+    commit and whether the tree was dirty, and the software/hardware it ran on.
+    A checkpoint whose settings cannot be recovered is not a result.
+    """
+    import platform
+    import subprocess
+
+    def git(*cmd: str) -> str:
+        try:
+            return subprocess.check_output(["git", "-C", str(Path(__file__).resolve().parent),
+                                            *cmd], text=True, stderr=subprocess.DEVNULL).strip()
+        except Exception:
+            return "unknown"
+
+    torch_version = device_name = "unavailable"
+    try:
+        import torch
+        torch_version = torch.__version__
+        if torch.cuda.is_available():
+            device_name = torch.cuda.get_device_name(0)
+    except Exception:
+        pass
+
+    config = {
+        "run_id": run_dir.name,
+        "started_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "command": " ".join([sys.executable.split("/")[-1], *sys.argv]),
+        "monitor_metric": monitor,
+        "ours": {"phrase": mine.phrase, "velocity": mine.velocity,
+                 "select_on": mine.select_on, "limit": mine.limit},
+        "args": {k: v for k, v in sorted(vars(args).items())},
+        "code": {"commit": git("rev-parse", "HEAD"),
+                 "branch": git("rev-parse", "--abbrev-ref", "HEAD"),
+                 "dirty": bool(git("status", "--porcelain"))},
+        "environment": {"python": platform.python_version(), "torch": torch_version,
+                        "host": platform.node(), "gpu": device_name},
+    }
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "run_config.json").write_text(json.dumps(config, indent=2, default=str))
+    print(f"wrote {run_dir}/run_config.json"
+          f"  (commit {config['code']['commit'][:8]}"
+          f"{', DIRTY' if config['code']['dirty'] else ''})")
 
 
 def write_data_report(run_dir: Path, phrase: str) -> dict:
