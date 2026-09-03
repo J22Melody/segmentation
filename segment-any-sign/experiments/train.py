@@ -131,15 +131,6 @@ def main() -> None:
     if args.wandb_project == "segmentation":
         args.wandb_project = "segment-any-sign"
 
-    print("\neffective data configuration"
-          f"\n  dataset      {args.datasets}"
-          f"\n  loader       {args.data_loader}"
-          f"\n  run / wandb  {_dated_run_name(args.run_name)}"
-          f"\n  archive      {dgs_data.BACKUP}"
-          f"\n  phrase gold  {args.phrase}"
-          + (f"\n  limit        {args.limit} clips per split (NOT a reportable run)"
-             if args.limit else ""))
-
     # Upstream's train() instantiates whatever `PoseTaggingModel` names in its own
     # module namespace, so swapping the symbol there is enough to get the extra
     # metrics without touching upstream code or copying its training loop.
@@ -165,6 +156,8 @@ def main() -> None:
         args.patience = max(1, round(0.1 * args.epochs))
 
     args.velocity = mine.velocity == "on"
+
+    report_effective_config(args, mine, _dated_run_name(args.run_name))
 
     run_dir = Path("dist") / _dated_run_name(args.run_name)
 
@@ -208,6 +201,33 @@ def main() -> None:
 
     if not mine.no_test:
         test_best_checkpoint(run_dir, phrase=mine.phrase)
+
+
+def report_effective_config(args, mine, run_name: str) -> None:
+    """Print what this run will actually use, after every override is applied.
+
+    Upstream's `args.py` prints the parsed Namespace at *import* time — before any
+    of our overrides exist — so that first line reports upstream's defaults and is
+    actively misleading about what is running. It cannot be suppressed from here,
+    so this restates the truth after the fact.
+    """
+    from datasets.public_dgs_corpus import load as dgs_data
+
+    print("\neffective configuration  (supersedes the `Arguments:` line above,"
+          "\n                          which upstream prints before any override)"
+          f"\n  data        {args.datasets} via {args.data_loader}"
+          f"\n              {dgs_data.BACKUP}"
+          f"\n  phrase gold {mine.phrase}"
+          f"\n  run/wandb   {run_name}  ->  project {args.wandb_project}"
+          f"\n  training    batch {args.batch_size}  epochs {args.epochs}  "
+          f"patience {args.patience}  lr {args.learning_rate:g}  {args.optimizer}"
+          f"\n  tricks OFF  dice {args.dice_loss_weight:g}  "
+          f"frame_dropout {args.frame_dropout:g}  "
+          f"body_part_dropout {args.body_part_dropout:g}  "
+          f"attn_dropout {args.attn_dropout:g}  velocity {args.velocity}"
+          f"\n  tricks ON   fps_aug {args.fps_aug}  num_frames {args.num_frames}"
+          + (f"\n  LIMIT       {args.limit} clips per split — NOT a reportable run"
+             if args.limit else ""))
 
 
 def write_run_config(run_dir: Path, args, mine, monitor: str) -> None:
